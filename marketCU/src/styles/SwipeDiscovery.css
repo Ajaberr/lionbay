@@ -1,0 +1,862 @@
+/* SwipeDiscovery.css - Tinder-inspired design */
+.swipe-discovery-container {
+  min-height: 100vh;
+  background-color: #f9fafc;
+  background-image: linear-gradient(135deg, #f9fafc 0%, #f0f4ff 100%);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
+  transition: all 0.3s ease;
+}
+
+/* Remove the blue gradient background */
+.swipe-discovery-container::before {
+  display: none;
+}
+
+.swipe-header {
+  text-align: center;
+  margin-bottom: 30px;
+  width: 100%;
+  max-width: 600px;
+  position: relative;
+  z-index: 1;
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 20px;
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+  animation: fadeInDown 0.8s ease forwards;
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.swipe-header h1 {
+  font-size: 2.4rem;
+  color: #1c4587;
+  font-weight: 700;
+  margin-bottom: 15px;
+}
+
+.swipe-header p {
+  font-size: 1.1rem;
+  color: #555;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.swipe-area {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  height: 650px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1;
+  margin: 30px auto 0;
+  transition: all 0.3s ease;
+  animation: fadeIn 0.8s ease forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.swipe-indicators {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+  top: 0;
+  left: 0;
+}
+
+.swipe-indicator {
+  position: absolute;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-weight: bold;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 3px solid;
+  z-index: 10;
+}
+
+.swipe-left-indicator {
+  top: 40px;
+  left: 40px;
+  background-color: rgba(231, 76, 60, 0.8);
+  border-color: #e74c3c;
+  transform: rotate(-15deg);
+}
+
+.swipe-right-indicator {
+  top: 40px;
+  right: 40px;
+  background-color: rgba(28, 69, 135, 0.8);
+  border-color: #1c4587;
+  transform: rotate(15deg);
+}
+
+.indicator-icon {
+  font-size: 1.5rem;
+}
+
+.indicator-text {
+  font-size: 1.2rem;
+  letter-spacing: 1px;
+}
+
+.product-card-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.swipe-card {
+  position: absolute;
+  width: 100%;
+  height: 75%;
+  background-color: white;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1), 0 3px 10px rgba(0, 0, 0, 0.05);
+  touch-action: pan-y;
+  user-select: none;
+  cursor: grab;
+  transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.4s ease;
+  will-change: transform;
+  border: none;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  top: 30px;
+  animation: cardEnter 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes cardEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.8) translateY(50px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.swipe-card:active {
+  cursor: grabbing;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 5px 15px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.product-swipe-card {
+  position: absolute;
+  width: 100%;
+  height: 75%;
+  background-color: white;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
+  touch-action: pan-y;
+  user-select: none;
+  cursor: grab;
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease;
+  will-change: transform;
+  border: none;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  top: 0;
+}
+
+.product-swipe-card:active {
+  cursor: grabbing;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+.swipe-product-image {
+  position: relative;
+  width: 100%;
+  height: 70%;
+  overflow: hidden;
+  background-color: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.swipe-product-image::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 130px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.85), transparent);
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+.swipe-product-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  transition: transform 0.7s ease;
+}
+
+.swipe-card:hover .swipe-product-image img {
+  transform: scale(1.08);
+  transition: transform 4s ease;
+}
+
+.image-loading-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: rgba(245, 245, 245, 0.7);
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(28, 69, 135, 0.2);
+  border-radius: 50%;
+  border-top: 4px solid #1c4587;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.swipe-product-details {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 20px;
+  color: white;
+  z-index: 2;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
+  padding-top: 50px;
+}
+
+.swipe-product-title {
+  font-size: 1.6rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: white;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.swipe-product-price {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: white;
+  margin-bottom: 12px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.swipe-product-meta {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.swipe-product-category,
+.swipe-product-condition {
+  font-size: 0.9rem;
+  background-color: rgba(255, 255, 255, 0.25);
+  padding: 6px 12px;
+  border-radius: 20px;
+  color: white;
+  font-weight: 600;
+  backdrop-filter: blur(5px);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.swipe-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 80px;
+  position: absolute;
+  bottom: 50px;
+  left: 0;
+  right: 0;
+  width: 100%;
+  z-index: 5;
+  animation: fadeInUp 0.8s ease forwards;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.swipe-btn {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  font-size: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+  background-color: white;
+  border: 3px solid;
+  z-index: 10;
+  transform: translateY(0);
+}
+
+.swipe-btn:hover {
+  transform: scale(1.1) translateY(-5px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+}
+
+.swipe-btn:active {
+  transform: scale(0.95) translateY(0);
+  transition: all 0.1s ease;
+}
+
+.swipe-left {
+  color: #FF5757;
+  border-color: #FF5757;
+}
+
+.swipe-right {
+  color: #5BD967;
+  border-color: #5BD967;
+}
+
+.swipe-left:hover {
+  background-color: rgba(255, 87, 87, 0.08);
+}
+
+.swipe-right:hover {
+  background-color: rgba(91, 217, 103, 0.08);
+}
+
+/* Improved animation for card movement */
+@keyframes swipeLeftAnimation {
+  0% { 
+    /* Don't reset position, animation will start from current position */
+    opacity: 1;
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
+  }
+  100% { 
+    transform: translateX(-200%) rotate(-30deg); 
+    opacity: 0;
+  }
+}
+
+/* Updated right swipe animation with glow effect */
+@keyframes swipeRightAnimation {
+  0% { 
+    /* Don't reset position, animation will start from current position */
+    opacity: 1;
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
+  }
+  20% {
+    box-shadow: 0 0 0 5px rgba(91, 217, 103, 0.4), 0 15px 35px rgba(0, 0, 0, 0.2);
+  }
+  40% {
+    box-shadow: 0 0 0 8px rgba(91, 217, 103, 0.3), 0 15px 35px rgba(0, 0, 0, 0.15);
+  }
+  100% { 
+    transform: translateX(200%) rotate(30deg);
+    opacity: 0;
+    box-shadow: 0 0 0 12px rgba(91, 217, 103, 0), 0 15px 35px rgba(0, 0, 0, 0);
+  }
+}
+
+.swiping-left {
+  animation: swipeLeftAnimation 0.6s cubic-bezier(0.215, 0.61, 0.355, 1) forwards;
+  /* Use will-change for smoother animation */
+  will-change: transform, opacity;
+}
+
+.swiping-right {
+  animation: swipeRightAnimation 0.6s cubic-bezier(0.215, 0.61, 0.355, 1) forwards;
+  /* Add a subtle outline/border glow effect for right swipes */
+  outline: 3px solid transparent;
+  transition: outline-color 0.3s ease;
+  /* Use will-change for smoother animation */
+  will-change: transform, opacity, box-shadow;
+}
+
+/* Loading animation improvements */
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 50px;
+  background-color: white;
+  border-radius: 20px;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08);
+  border: none;
+  color: #555;
+  text-align: center;
+  max-width: 400px;
+  width: 100%;
+  margin: 0 auto;
+  animation: pulse 2s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08);
+  }
+  50% {
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
+  }
+  100% {
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08);
+  }
+}
+
+.loading::before {
+  content: "";
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(91, 217, 103, 0.2);
+  border-top-color: #5BD967;
+  border-radius: 50%;
+  animation: spin 1s infinite cubic-bezier(0.55, 0.09, 0.68, 0.53);
+  margin-bottom: 20px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Remove any leftover swipe-button classes */
+.swipe-button {
+  display: none; /* Hide any old style classes */
+}
+
+.swipe-button.like,
+.swipe-button.skip {
+  display: none; /* Hide any old style classes */
+}
+
+.no-more-products {
+  text-align: center;
+  padding: 40px;
+  background-color: white;
+  border-radius: 16px;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.12);
+  border: none;
+  max-width: 400px;
+}
+
+.no-more-products h2 {
+  font-size: 1.8rem;
+  color: #1c4587;
+  margin-bottom: 15px;
+  font-weight: 600;
+}
+
+.no-more-products p {
+  font-size: 1.1rem;
+  color: #555;
+  margin-bottom: 25px;
+}
+
+.refresh-btn {
+  background-color: #1c4587;
+  color: white;
+  border: none;
+  border-radius: 30px;
+  padding: 14px 30px;
+  font-size: 1.1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.refresh-btn:hover {
+  background-color: #163a70;
+  transform: translateY(-3px);
+  box-shadow: 0 6px 12px rgba(28, 69, 135, 0.3);
+}
+
+.refresh-btn:active {
+  transform: translateY(-1px);
+}
+
+/* Replace full-screen contact modal with toast notification */
+.contact-modal-overlay {
+  display: none; /* Hide the old full-screen overlay */
+}
+
+/* New toast notification styles */
+.action-toast {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  background-color: white;
+  border-radius: 12px;
+  padding: 16px 20px;
+  width: auto;
+  max-width: 300px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+  z-index: 90;
+  transform: translateX(120%);
+  opacity: 0;
+  transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease;
+  border-left: 4px solid #5BD967;
+}
+
+.action-toast.show {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.action-toast.hiding {
+  transform: translateX(120%);
+  opacity: 0;
+}
+
+.action-toast-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.action-toast-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1c4587;
+  margin: 0;
+}
+
+.dismiss-toast {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 16px;
+  padding: 0;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.dismiss-toast:hover {
+  background-color: #f1f1f1;
+  color: #666;
+  transform: none;
+  box-shadow: none;
+}
+
+.action-toast-content {
+  margin-bottom: 14px;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.action-toast-product {
+  font-weight: 500;
+  color: #333;
+}
+
+.action-toast-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.toast-btn {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+  border: none;
+}
+
+.contact-seller-toast-btn {
+  background-color: #1c4587;
+  color: white;
+}
+
+.contact-seller-toast-btn:hover {
+  background-color: #163a70;
+  transform: translateY(-2px);
+}
+
+.add-to-cart-toast-btn {
+  background-color: #f8f8f8;
+  color: #1c4587;
+  border: 1px solid #e0e0e0;
+}
+
+.add-to-cart-toast-btn:hover {
+  background-color: #f0f4ff;
+  border-color: #1c4587;
+  transform: translateY(-2px);
+}
+
+.action-toast-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background-color: #5BD967;
+  border-radius: 0 0 0 12px;
+  width: 100%;
+  transform-origin: left;
+  animation: countdown 5s linear forwards;
+}
+
+@keyframes countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+/* Keep the old contact modal styles but hide the overlay */
+.contact-modal {
+  display: none; /* Hide old modal */
+}
+
+/* Media queries for responsiveness */
+@media (max-width: 768px) {
+  .swipe-discovery-container::before {
+    display: none;
+  }
+  
+  .swipe-header {
+    padding: 15px;
+    margin-bottom: 20px;
+  }
+  
+  .swipe-header h1 {
+    font-size: 2rem;
+  }
+  
+  .swipe-header p {
+    font-size: 1rem;
+  }
+  
+  .swipe-area {
+    height: 600px;
+    max-width: 350px;
+    margin: 25px auto 0;
+  }
+  
+  .swipe-card,
+  .product-swipe-card {
+    height: 80%;
+    top: 25px;
+  }
+  
+  .swipe-btn {
+    width: 70px;
+    height: 70px;
+    font-size: 28px;
+  }
+  
+  .swipe-buttons {
+    bottom: 30px;
+    gap: 60px;
+  }
+  
+  .action-toast {
+    bottom: 80px; /* Move above the mobile nav */
+    right: 20px;
+    max-width: 280px;
+  }
+}
+
+@media (max-width: 480px) {
+  .swipe-discovery-container {
+    padding: 15px 10px;
+  }
+  
+  .swipe-discovery-container::before {
+    display: none;
+  }
+  
+  .swipe-header {
+    margin-bottom: 15px;
+    padding: 15px 10px;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.03);
+  }
+  
+  .swipe-header h1 {
+    font-size: 1.8rem;
+  }
+  
+  .swipe-header p {
+    font-size: 0.9rem;
+  }
+  
+  .swipe-area {
+    height: 540px;
+    max-width: 320px;
+    width: 95%;
+    margin: 20px auto 0;
+  }
+  
+  .swipe-card,
+  .product-swipe-card {
+    height: 75%;
+    top: 20px;
+  }
+  
+  .swipe-product-title {
+    font-size: 1.4rem;
+  }
+  
+  .swipe-product-price {
+    font-size: 1.6rem;
+  }
+  
+  .swipe-left-indicator,
+  .swipe-right-indicator {
+    font-size: 1.2rem;
+  }
+  
+  .swipe-left-indicator i,
+  .swipe-right-indicator i {
+    font-size: 2.8rem;
+    width: 60px;
+    height: 60px;
+  }
+  
+  .swipe-btn {
+    width: 60px;
+    height: 60px;
+    font-size: 24px;
+  }
+  
+  .action-toast {
+    right: 10px;
+    left: 10px;
+    max-width: none;
+    width: auto;
+  }
+  
+  .action-toast-buttons {
+    flex-direction: column;
+  }
+  
+  .toast-btn {
+    width: 100%;
+  }
+}
+
+/* Additional small screen optimization */
+@media (max-width: 350px) {
+  .swipe-area {
+    height: 500px;
+    max-width: 280px;
+  }
+  
+  .swipe-card,
+  .product-swipe-card {
+    height: 70%;
+  }
+  
+  .swipe-btn {
+    width: 55px;
+    height: 55px;
+    font-size: 22px;
+  }
+  
+  .swipe-buttons {
+    gap: 30px;
+    bottom: 15px;
+  }
+}
+
+/* Accessibility class */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Loading-more indicator that was accidentally removed */
+.loading-more {
+  position: absolute;
+  bottom: 15px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #fff;
+  font-size: 0.9rem;
+  padding: 8px 15px;
+  background-color: rgba(28, 69, 135, 0.7);
+  border-radius: 30px;
+  margin: 0 auto;
+  max-width: 200px;
+  backdrop-filter: blur(5px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+} 

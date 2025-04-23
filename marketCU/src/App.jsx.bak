@@ -1,0 +1,2107 @@
+import { useState, useContext, createContext, useEffect, useRef, Fragment } from 'react';
+import { BrowserRouter as Router, Route, Routes, Link, Navigate, useParams, useNavigate } from 'react-router-dom';
+import './App.css';
+import './Chat.css';
+import logo from './assets/lion-logo.svg';
+import axios from 'axios';
+import { io } from 'socket.io-client';
+import LoginPage from './components/LoginPage';
+import HomePage from './components/HomePage';
+import GenZToast from './components/ToastNotification'; // Import with alias to avoid conflict
+import HelpChatWidget from './components/HelpChatWidget';
+import AdminDashboard from './components/AdminDashboard';
+import PageTitle from './components/PageTitle';
+import SwipeDiscovery from './components/SwipeDiscovery';
+import DiscoverFeature from './components/DiscoverFeature';
+
+// API Base URL Configuration
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
+
+// Define product categories for consistency
+const PRODUCT_CATEGORIES = [
+  "Laptops & Accessories",
+  "Textbooks & Study Guides",
+  "Dorm & Apartment Essentials",
+  "Bicycles & Scooters",
+  "Electronics & Gadgets",
+  "Furniture & Storage",
+  "Clothing & Fashion",
+  "School Supplies"
+];
+
+// Create Auth Context
+const AuthContext = createContext();
+
+export function useAuth() {
+  return useContext(AuthContext);
+}
+
+export function AuthProvider({ children }) {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState(localStorage.getItem('token'));
+
+  useEffect(() => {
+    // Check if we have a token in localStorage
+    const storedToken = localStorage.getItem('token');
+    
+    // Support both old and new user data formats
+    let storedUser;
+    try {
+      storedUser = JSON.parse(localStorage.getItem('user'));
+    } catch (e) {
+      // Ignore parsing errors
+    }
+    
+    if (storedToken && storedUser) {
+      setToken(storedToken);
+      setCurrentUser(storedUser);
+    }
+    
+    setLoading(false);
+  }, []);
+
+  // Keeping the old login methods for backward compatibility
+  const login = async (usernameOrEmail, password) => {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/login`, {
+        usernameOrEmail,
+        password
+      });
+      
+      const { token, user } = response.data;
+      
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(user));
+      
+      setToken(token);
+      setCurrentUser(user);
+      
+      return user;
+    } catch (error) {
+      console.error('Login error:', error.response?.data || error.message);
+      throw error;
+    }
+  };
+
+  const register = async (username, email, password) => {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/register`, {
+        username,
+        email,
+        password
+      });
+      
+      const { token, user } = response.data;
+      
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(user));
+      
+      setToken(token);
+      setCurrentUser(user);
+      
+      return user;
+    } catch (error) {
+      console.error('Registration error:', error.response?.data || error.message);
+      throw error;
+    }
+  };
+
+  // Method for email verification login
+  const verifyEmailLogin = (token, userData) => {
+    // Make sure we store the isAdmin flag in the user data
+    const userWithAdminFlag = {
+      ...userData,
+      isAdmin: userData.isAdmin || ['admin@lionbay.com', 'support@lionbay.com'].includes(userData.email)
+    };
+    
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(userWithAdminFlag));
+    
+    setToken(token);
+    setCurrentUser(userWithAdminFlag);
+  };
+
+  const logout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setToken(null);
+    setCurrentUser(null);
+  };
+
+  // Create axios instance with auth headers
+  const authAxios = axios.create({
+    baseURL: API_BASE_URL
+  });
+  
+  authAxios.interceptors.request.use(
+    (config) => {
+      if (token) {
+        config.headers['Authorization'] = `Bearer ${token}`;
+      }
+      return config;
+    },
+    (error) => {
+      return Promise.reject(error);
+    }
+  );
+
+  const value = {
+    currentUser,
+    login,
+    register,
+    verifyEmailLogin,
+    logout,
+    authAxios,
+    isAuthenticated: !!currentUser
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {!loading && children}
+    </AuthContext.Provider>
+  );
+}
+
+const CartContext = createContext();
+
+export function useCart() {
+  return useContext(CartContext);
+}
+
+export function CartProvider({ children }) {
+  const [cartCount, setCartCount] = useState(0);
+  const { authAxios, isAuthenticated } = useAuth();
+  
+  const updateCartCount = async () => {
+    if (!isAuthenticated) return;
+    
+    try {
+      const response = await authAxios.get('/api/cart/count');
+      if (response.data && response.data.count !== undefined) {
+        setCartCount(response.data.count);
+      }
+    } catch (error) {
+      console.error('Error fetching cart count:', error);
+    }
+  };
+  
+  useEffect(() => {
+    updateCartCount();
+  }, [isAuthenticated]);
+  
+  return (
+    <CartContext.Provider value={{ cartCount, updateCartCount }}>
+      {children}
+    </CartContext.Provider>
+  );
+}
+
+// Create a messages context for unread message count
+const MessagesContext = createContext();
+
+export function useMessages() {
+  return useContext(MessagesContext);
+}
+
+export function MessagesProvider({ children }) {
+  const [unreadCount, setUnreadCount] = useState(0);
+  const { authAxios, isAuthenticated } = useAuth();
+  
+  const updateUnreadCount = async () => {
+    if (!isAuthenticated) return;
+    
+    try {
+      const response = await authAxios.get('/api/chats/unread-count');
+      if (response.data && response.data.count !== undefined) {
+        setUnreadCount(response.data.count);
+      }
+    } catch (error) {
+      console.error('Error fetching unread message count:', error);
+    }
+  };
+  
+  useEffect(() => {
+    if (isAuthenticated) {
+      updateUnreadCount();
+      
+      // Set up polling to update unread count
+      const interval = setInterval(updateUnreadCount, 30000); // Every 30 seconds
+      
+      return () => clearInterval(interval);
+    }
+  }, [isAuthenticated]);
+  
+  return (
+    <MessagesContext.Provider value={{ unreadCount, updateUnreadCount }}>
+      {children}
+    </MessagesContext.Provider>
+  );
+}
+
+function MessageCount() {
+  const { unreadCount } = useMessages();
+  
+  return (
+    <>
+      Messages
+      {unreadCount > 0 && (
+        <span className="message-badge">{unreadCount}</span>
+      )}
+    </>
+  );
+}
+
+function CartCount() {
+  const { cartCount } = useCart();
+  
+  return (
+    <>
+      Cart
+      {cartCount > 0 && (
+        <span className="cart-badge">{cartCount}</span>
+      )}
+    </>
+  );
+}
+
+export function HeadBar() {
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { isAuthenticated, logout, currentUser } = useAuth();
+  
+  const handleResize = () => {
+    setWindowWidth(window.innerWidth);
+  };
+  
+  useEffect(() => {
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+  
+  const toggleSidebar = () => {
+    setMobileMenuOpen(!mobileMenuOpen);
+  };
+  
+  return (
+    <div className="header">
+      <div className="leftside">
+        <Link to="/" className="logo-container">
+          <img src={logo} alt="Lion Bay" />
+          <span className="logo-text">LionBay</span>
+        </Link>
+        <Link to="/market" className="nav-link">Buy Stuff</Link>
+        {isAuthenticated && <Link to="/discover" className="nav-link">Discover</Link>}
+        {isAuthenticated && <Link to="/create-product" className="nav-link">Sell Stuff</Link>}
+      </div>
+      
+      <div className="rightside">
+        {isAuthenticated ? (
+          <>
+            <span className="username">{currentUser.email}</span>
+            <Link to="/cart" className="nav-link cart-nav">
+              Cart <CartCount />
+            </Link>
+            <Link to="/chats" className="nav-link messages-nav">
+              DMs <MessageCount />
+            </Link>
+            {windowWidth > 1024 && <Link to="/my-products" className="nav-link">My Listings</Link>}
+            <button className="sign-in-btn" onClick={logout}>Log Out</button>
+            
+            {/* Mobile menu toggle button */}
+            {windowWidth <= 768 && (
+              <button className="mobile-menu-toggle" onClick={toggleSidebar} aria-label="Open menu">
+                <i className="fas fa-bars menu-icon"></i>
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <Link to="/login" className="login-btn">Sign In</Link>
+            
+            {/* Mobile menu toggle button */}
+            {windowWidth <= 768 && (
+              <button className="mobile-menu-toggle" onClick={toggleSidebar} aria-label="Open menu">
+                <i className="fas fa-bars menu-icon"></i>
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      
+      {/* Mobile Sidebar */}
+      <MobileSidebar 
+        isOpen={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+        isAuthenticated={isAuthenticated}
+        onLogout={logout}
+      />
+    </div>
+  );
+}
+
+function SignInPage() {
+  const { verifyEmailLogin, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const [codeSent, setCodeSent] = useState(false);
+  const [email, setEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('success');
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/home');
+    }
+  }, [isAuthenticated, navigate]);
+  
+  // Hide login explainer initially
+  useEffect(() => {
+    const explainer = document.querySelector('.login-explainer');
+    if (explainer) {
+      explainer.classList.remove('show');
+    }
+  }, []);
+
+  const handleSendCode = async (e) => {
+    e.preventDefault();
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await axios.post(`${API_BASE_URL}/auth/verify-email`, { email });
+      setCodeSent(true);
+      
+      // For development, auto-fill the code if returned in response
+      if (response.data.code) {
+        setVerificationCode(response.data.code);
+      }
+      
+      // Display success message to user
+      setToastMessage('Verification code sent to your email');
+      setToastType('success');
+      setShowToast(true);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to send verification code');
+      console.error('Email verification error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await axios.post(`${API_BASE_URL}/auth/verify-code`, {
+        email,
+        code: verificationCode
+      });
+      
+      // Check if this is an admin email
+      const isAdmin = ['admin@lionbay.com', 'support@lionbay.com'].includes(email);
+      
+      const userData = {
+        userId: response.data.userId,
+        email: email,
+        isAdmin: isAdmin || response.data.isAdmin
+      };
+      
+      console.log('User authenticated:', userData);
+      
+      verifyEmailLogin(response.data.token, userData);
+      navigate('/home');
+    } catch (error) {
+      console.error('Verification error:', error.response?.data || error.message);
+      setError('Invalid verification code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className='body'>
+      <div className="sign-in-container">
+        <h1 className="sign-in-title">
+          Lion Bay
+        </h1>
+
+        <div className="form-container">
+          {!codeSent ? (
+            <form onSubmit={handleSendCode}>
+              <p className="required-field-note">* indicates required field</p>
+              
+              <div className="login-explainer">
+                <p>Drop your Columbia email, get a code, and you're in. No passwords to remember, no forms to fill out. Verified = that's it, you heard!</p>
+              </div>
+              
+              {error && <div className="auth-error">{error}</div>}
+
+              <div className="form-field">
+                <label htmlFor="email" className="sr-only">Email Address</label>
+                <input
+                  type="email"
+                  id="email"
+                  name="email"
+                  placeholder="* Your Columbia Email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="form-input"
+                />
+              </div>
+
+              <div className="captcha-container">
+                <div className="captcha-box">
+                  <div className="captcha-info">
+                    <i className="fas fa-shield-alt"></i>
+                    <span>Human verification - Friendly CAPTCHA</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="form-actions">
+                <button type="submit" className="sign-in-button" disabled={loading}>
+                  {loading ? 'Sending...' : 'Send Verification Code'}
+                </button>
+              </div>
+              
+              <div className="no-account-link">
+                <button 
+                  type="button" 
+                  className="no-account-btn"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => document.querySelector('.login-explainer').classList.toggle('show')}
+                >
+                  Wait... no account needed?
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleVerifyCode}>
+              <p className="required-field-note">A verification code has been sent to your email</p>
+              
+              {error && <div className="auth-error">{error}</div>}
+
+              <div className="form-field">
+                <label htmlFor="verificationCode" className="sr-only">Verification Code</label>
+                <input
+                  type="text"
+                  id="verificationCode"
+                  name="verificationCode"
+                  placeholder="* Verification Code"
+                  value={verificationCode}
+                  onChange={(e) => setVerificationCode(e.target.value)}
+                  required
+                  className="form-input"
+                />
+              </div>
+
+              <div className="form-actions">
+                <button type="submit" className="sign-in-button" disabled={loading}>
+                  {loading ? 'Verifying...' : 'Verify Code'}
+                </button>
+              </div>
+              
+              <div className="auth-toggle">
+                <button 
+                  type="button" 
+                  className="toggle-auth-btn"
+                  onClick={() => setCodeSent(false)}
+                >
+                  Try a different email
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+      
+      {showToast && (
+        <GenZToast
+          message={toastMessage}
+          type={toastType}
+          onClose={() => setShowToast(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function MarketPage() {
+  const [priceRange, setPriceRange] = useState([10, 100000]);
+  const [selectedCategories, setSelectedCategories] = useState([]);
+  const [sortBy, setSortBy] = useState('featured');
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [maxPrice, setMaxPrice] = useState(1000); // Default max price
+  const [searchQuery, setSearchQuery] = useState(''); // Add search query state
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/products`);
+        // Sort products by creation date, newest first
+        const sortedProducts = response.data.sort((a, b) => 
+          new Date(b.created_at) - new Date(a.created_at)
+        );
+        setProducts(sortedProducts);
+
+        // Find the highest price among products
+        const highestPrice = Math.max(...sortedProducts.map(p => p.price));
+        setMaxPrice(Math.ceil(highestPrice)); // Round up to nearest integer
+        setPriceRange([0, Math.ceil(highestPrice)]); // Update price range
+      } catch (err) {
+        console.error('Error fetching products:', err);
+        setError('Failed to load products. Please try again later.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProducts();
+    const interval = setInterval(fetchProducts, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Filter functions
+  const handleCategoryChange = (category) => {
+    if (selectedCategories.includes(category)) {
+      setSelectedCategories(selectedCategories.filter(c => c !== category));
+    } else {
+      setSelectedCategories([...selectedCategories, category]);
+    }
+  };
+
+  const handlePriceChange = (event) => {
+    setPriceRange([Number(event.target.value), priceRange[1]]);
+  };
+
+  const handleMaxPriceChange = (event) => {
+    setPriceRange([priceRange[0], Number(event.target.value)]);
+  };
+
+  const handleSearchChange = (event) => {
+    setSearchQuery(event.target.value);
+  };
+
+  // Filter products based on selected filters and search
+  const filteredProducts = products.filter(product => {
+    const matchesCategory = selectedCategories.length === 0 || selectedCategories.includes(product.category);
+    const matchesPrice = product.price >= priceRange[0] && product.price <= priceRange[1];
+    const matchesSearch = searchQuery === '' || 
+      product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      product.details.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      product.category.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesCategory && matchesPrice && matchesSearch;
+  });
+
+  // Sort products
+  const sortedProducts = [...filteredProducts].sort((a, b) => {
+    if (sortBy === 'price-asc') return a.price - b.price;
+    if (sortBy === 'price-desc') return b.price - a.price;
+    return 0; // Default: featured
+  });
+
+  if (loading) return (
+    <div className="market-page">
+      <div className="loading">Loading products...</div>
+    </div>
+  );
+
+  if (error) return (
+    <div className="market-page">
+      <div className="error">{error}</div>
+    </div>
+  );
+
+  // Render the market page with products
+  return (
+    <div className="market-page">
+      <div className="market-container">
+        <div className="market-header">
+          <div className="market-title">
+            <h1>Lion Bay</h1>
+            <p>The ultimate marketplace with the cheapest and best student utilities.</p>
+          </div>
+          
+          <div className="search-container">
+            <input
+              type="text"
+              placeholder="Search products..."
+              value={searchQuery}
+              onChange={handleSearchChange}
+              className="search-input"
+            />
+          </div>
+        </div>
+
+        <div className="market-content">
+          <div className="filters-sidebar">
+            <div className="product-count">
+              <span>{filteredProducts.length} products</span>
+            </div>
+            
+            <div className="filter-section">
+              <div className="filter-header">
+                <h3>Price</h3>
+              </div>
+              <div className="price-range">
+                <div className="range-slider">
+                  <input
+                    type="range"
+                    min="0"
+                    max={maxPrice}
+                    value={priceRange[0]}
+                    onChange={handlePriceChange}
+                    className="slider"
+                  />
+                </div>
+                <div className="price-inputs">
+                  <div>From ${priceRange[0]}</div>
+                  <div>to ${priceRange[1]}</div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="filter-section">
+              <div className="filter-header">
+                <h3>Categories</h3>
+              </div>
+              <div className="gender-options">
+                <div className="filter-option">
+                  <input
+                    type="checkbox"
+                    id="laptops"
+                    checked={selectedCategories.includes("Laptops & Accessories")}
+                    onChange={() => handleCategoryChange("Laptops & Accessories")}
+                  />
+                  <label htmlFor="laptops">Laptops & Accessories</label>
+                </div>
+                <div className="filter-option">
+                  <input
+                    type="checkbox"
+                    id="textbooks"
+                    checked={selectedCategories.includes("Textbooks & Study Guides")}
+                    onChange={() => handleCategoryChange("Textbooks & Study Guides")}
+                  />
+                  <label htmlFor="textbooks">Textbooks & Study Guides</label>
+                </div>
+                <div className="filter-option">
+                  <input
+                    type="checkbox"
+                    id="dorm"
+                    checked={selectedCategories.includes("Dorm & Apartment Essentials")}
+                    onChange={() => handleCategoryChange("Dorm & Apartment Essentials")}
+                  />
+                  <label htmlFor="dorm">Dorm & Apartment Essentials</label>
+                </div>
+                <div className="filter-option">
+                  <input
+                    type="checkbox"
+                    id="bicycles"
+                    checked={selectedCategories.includes("Bicycles & Scooters")}
+                    onChange={() => handleCategoryChange("Bicycles & Scooters")}
+                  />
+                  <label htmlFor="bicycles">Bicycles & Scooters</label>
+                </div>
+                <div className="filter-option">
+                  <input
+                    type="checkbox"
+                    id="electronics"
+                    checked={selectedCategories.includes("Electronics & Gadgets")}
+                    onChange={() => handleCategoryChange("Electronics & Gadgets")}
+                  />
+                  <label htmlFor="electronics">Electronics & Gadgets</label>
+                </div>
+                <div className="filter-option">
+                  <input
+                    type="checkbox"
+                    id="furniture"
+                    checked={selectedCategories.includes("Furniture & Storage")}
+                    onChange={() => handleCategoryChange("Furniture & Storage")}
+                  />
+                  <label htmlFor="furniture">Furniture & Storage</label>
+                </div>
+                <div className="filter-option">
+                  <input
+                    type="checkbox"
+                    id="clothing"
+                    checked={selectedCategories.includes("Clothing & Fashion")}
+                    onChange={() => handleCategoryChange("Clothing & Fashion")}
+                  />
+                  <label htmlFor="clothing">Clothing & Fashion</label>
+                </div>
+                <div className="filter-option">
+                  <input
+                    type="checkbox"
+                    id="supplies"
+                    checked={selectedCategories.includes("School Supplies")}
+                    onChange={() => handleCategoryChange("School Supplies")}
+                  />
+                  <label htmlFor="supplies">School Supplies</label>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="products-grid">
+            <div className="sort-options">
+              <label>Sort by</label>
+              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                <option value="featured">Featured</option>
+                <option value="price-asc">Price: Low to High</option>
+                <option value="price-desc">Price: High to Low</option>
+              </select>
+            </div>
+            
+            <div className="products-list">
+              {sortedProducts.length > 0 ? (
+                sortedProducts.map((product) => (
+                  <Link key={product.id} to={`/market/${product.id}`} className="product-card-link">
+                    <div className="product-card">
+                      <div className="product-image">
+                        <img src={product.image_path || "/api/placeholder/300/300"} alt={product.name} />
+                      </div>
+                      <div className="product-details">
+                        <div className="product-title">{product.name}</div>
+                        <div className="product-specs">
+                          <div>{product.details}</div>
+                          <div>{product.category}</div>
+                          <div>{product.condition}</div>
+                        </div>
+                        <div className="product-price">${product.price.toLocaleString()}</div>
+                      </div>
+                    </div>
+                  </Link>
+                ))
+              ) : (
+                <div className="no-products">
+                  <p>No products found matching your criteria.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductDetailPage() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { authAxios, currentUser, isAuthenticated } = useAuth();
+  const { updateCartCount } = useCart();
+  const { updateUnreadCount } = useMessages();
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
+
+  useEffect(() => {
+    const fetchProduct = async () => {
+      try {
+        console.log(`Fetching product details for ID: ${id}`);
+        const response = await axios.get(`${API_BASE_URL}/products/${id}`);
+        setProduct(response.data);
+        console.log("Product data received:", response.data);
+      } catch (err) {
+        console.error('Error fetching product details:', err);
+        setError('Failed to load product details. Product may not exist.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProduct();
+  }, [id]);
+
+  const handleContactSeller = async () => {
+    if (!isAuthenticated) {
+      navigate('/');
+      return;
+    }
+
+    try {
+      // Check if user is trying to contact themselves
+      if (currentUser.userId === product.seller_id) {
+        console.log("User tried to contact themselves");
+        setToastMessage("Bruh moment... you can't message yourself! 🤦‍♂️");
+        setToastType("error");
+        setShowToast(true);
+        return;
+      }
+
+      console.log(`Creating chat for product: ${product.id} with seller: ${product.seller_id}`);
+      
+      // Create or get chat for this product
+      const response = await authAxios.post('/chats', {
+        product_id: product.id,
+        seller_id: product.seller_id
+      });
+      
+      console.log("Chat created/retrieved:", response.data);
+      
+      // Add to cart with CONTACTED type
+      await authAxios.post('/cart', {
+        product_id: product.id,
+        cart_type: 'CONTACTED',
+        chat_id: response.data.id
+      });
+      
+      // Update cart count
+      if (updateCartCount) {
+        updateCartCount();
+      }
+      
+      // Update unread message count
+      if (updateUnreadCount) {
+        updateUnreadCount();
+      }
+      
+      // Show success toast
+      setToastMessage("Seller connection unlocked! ✨ Slide into messages to chat!");
+      setToastType("success");
+      setShowToast(true);
+      
+      // Wait a moment before navigating to allow toast to be seen
+      setTimeout(() => {
+      // Navigate to the chat
+      navigate(`/chats/${response.data.id}`);
+      }, 1500);
+      
+    } catch (err) {
+      console.error('Error creating chat:', err.response?.data || err.message);
+      
+      // Check if this is the "cannot chat with yourself" error
+      if (err.response?.data?.error === 'Cannot create chat with yourself') {
+        setToastMessage("Bruh moment... you can't message yourself! 🤦‍♂️");
+      } else {
+        setToastMessage(err.response?.data?.error || 'Oops! Chat failed to send. Try again?');
+      }
+      
+      setToastType("error");
+      setShowToast(true);
+    }
+  };
+  
+  const handleAddToCart = async () => {
+    if (!isAuthenticated) {
+      navigate('/');
+      return;
+    }
+
+    try {
+      // Check if user is trying to add their own product
+      if (currentUser.userId === product.seller_id) {
+        setToastMessage("Can't add your own stuff to cart... that's not the vibe! 🙅‍♂️");
+        setToastType("error");
+        setShowToast(true);
+        return;
+      }
+
+      // Add to cart with CART_ONLY type
+      await authAxios.post('/cart', {
+        product_id: product.id,
+        cart_type: 'CART_ONLY'
+      });
+      
+      // Update cart count
+      if (updateCartCount) {
+        updateCartCount();
+      }
+      
+      // Show success toast
+      setToastMessage("Yasss! 🛒 Item secured in your cart! Check the cart icon to checkout.");
+      setToastType("success");
+      setShowToast(true);
+    } catch (err) {
+      console.error('Error adding to cart:', err.response?.data || err.message);
+      setToastMessage(err.response?.data?.error || 'Cart fail! 😭 Try again?');
+      setToastType("error");
+      setShowToast(true);
+    }
+  };
+
+  if (loading) return (
+    <div className="product-detail-page">
+      <div className="loading">Loading product details...</div>
+    </div>
+  );
+
+  if (error || !product) return (
+    <div className="product-detail-page">
+      <div className="error">{error || 'Product not found'}</div>
+    </div>
+  );
+
+  const isOwner = isAuthenticated && currentUser.userId === product.seller_id;
+
+  return (
+    <div className="product-detail-page">
+      <div className="product-detail-container">
+        <div className="product-detail-left">
+          <img 
+            src={product.image_path || "/api/placeholder/600/400"} 
+            alt={product.name} 
+            className="product-detail-image"
+          />
+        </div>
+        <div className="product-detail-right">
+          <h1 className="product-detail-title">{product.name}</h1>
+          <div className="product-detail-price">${product.price.toLocaleString()}</div>
+          
+          <div className="product-detail-seller">
+            <p>Seller: {product.seller_email || 'Unknown'}</p>
+          </div>
+          
+          <div className="product-detail-info">
+            <p><strong>Category:</strong> {product.category}</p>
+            <p><strong>Condition:</strong> {product.condition}</p>
+            {product.material && <p><strong>Material:</strong> {product.material}</p>}
+          </div>
+          
+          <div className="product-detail-description">
+            <h3>Details</h3>
+            <p>{product.details}</p>
+          </div>
+          
+          {isOwner ? (
+            <div className="owner-message">
+              <p>This is your listing</p>
+            </div>
+          ) : isAuthenticated ? (
+            <div className="product-actions">
+            <button onClick={handleContactSeller} className="contact-seller-button">
+              Contact Seller
+            </button>
+              <button onClick={handleAddToCart} className="add-to-cart-button">
+                Add to Cart
+              </button>
+            </div>
+          ) : (
+            <Link to="/" className="contact-seller-button">
+              Login to contact seller
+            </Link>
+          )}
+        </div>
+      </div>
+      
+      {showToast && (
+        <GenZToast
+          message={toastMessage}
+          type={toastType}
+          onClose={() => setShowToast(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function CreateProductPage() {
+  const { authAxios } = useAuth();
+  const navigate = useNavigate();
+  const [formData, setFormData] = useState({
+    name: '',
+    details: '',
+    condition: 'New',
+    price: '',
+    category: '',
+    image_path: ''
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [imageError, setImageError] = useState('');
+  const [previewImage, setPreviewImage] = useState('');
+  const [uploadMethod, setUploadMethod] = useState('url'); // 'url' or 'file'
+  
+  // Toast notification state
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('success');
+
+  const validateImageUrl = async (url) => {
+    try {
+      const response = await fetch(url);
+      const contentType = response.headers.get('content-type');
+      return contentType.startsWith('image/');
+    } catch {
+      return false;
+    }
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData({
+      ...formData,
+      [name]: name === 'price' ? (value === '' ? '' : parseFloat(value)) : value
+    });
+
+    // Clear image error when user starts typing new URL
+    if (name === 'image_path') {
+      setImageError('');
+      if (value) {
+        setPreviewImage(value);
+      } else {
+        setPreviewImage('');
+      }
+    }
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        setImageError('Please upload a valid image file');
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64Image = event.target.result;
+        setPreviewImage(base64Image);
+        setFormData({
+          ...formData,
+          image_path: base64Image
+        });
+        setImageError('');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setImageError('');
+
+    try {
+      // Validate image URL if provided and using URL method
+      if (uploadMethod === 'url' && formData.image_path) {
+        const isValidImage = await validateImageUrl(formData.image_path);
+        if (!isValidImage) {
+          setImageError('Please provide a valid image URL');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      const response = await authAxios.post('/products', formData);
+      console.log('Product created successfully:', response.data);
+      
+      // Show success toast instead of alert
+      setToastMessage('Product created successfully!');
+      setToastType('success');
+      setShowToast(true);
+      
+      // Navigate to the product detail page immediately
+      navigate(`/market/${response.data.id}`);
+      
+    } catch (error) {
+      console.error('Error creating product:', error);
+      
+      // Show error toast instead of alert
+      setToastMessage('Failed to create product. Please try again.');
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="create-product-page">
+      <div className="create-product-container">
+        <div className="lionbay-header">
+          <div className="lionbay-logo">
+            <img src={logo} alt="Lion Bay" />
+          </div>
+          <h1>Lion Bay Marketplace</h1>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="create-product-form">
+          <div className="form-group">
+            <label htmlFor="name">Product Name</label>
+            <input
+              type="text"
+              id="name"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              required
+              placeholder="e.g., MacBook Pro 2023"
+            />
+          </div>
+          
+          <div className="form-group">
+            <label htmlFor="price">Price ($)</label>
+            <input
+              type="number"
+              id="price"
+              name="price"
+              value={formData.price}
+              onChange={handleChange}
+              required
+              min="0.01"
+              step="0.01"
+              placeholder="e.g., 999.99"
+            />
+          </div>
+          
+          <div className="form-group">
+            <label htmlFor="condition">Condition</label>
+            <select
+              id="condition"
+              name="condition"
+              value={formData.condition}
+              onChange={handleChange}
+              required
+            >
+              <option value="">Select</option>
+              <option value="New">New</option>
+              <option value="Like new">Like new</option>
+              <option value="Good condition">Good condition</option>
+              <option value="Fair condition">Fair condition</option>
+              <option value="Poor condition">Poor condition</option>
+            </select>
+          </div>
+          
+          <div className="form-group">
+            <label htmlFor="category">Category</label>
+            <select
+              id="category"
+              name="category"
+              value={formData.category}
+              onChange={handleChange}
+              required
+            >
+              <option value="">Select</option>
+              <option value="Laptops & Accessories">Laptops & Accessories</option>
+              <option value="Textbooks & Study Guides">Textbooks & Study Guides</option>
+              <option value="Dorm & Apartment Essentials">Dorm & Apartment Essentials</option>
+              <option value="Bicycles & Scooters">Bicycles & Scooters</option>
+              <option value="Electronics & Gadgets">Electronics & Gadgets</option>
+              <option value="Furniture & Storage">Furniture & Storage</option>
+              <option value="Clothing & Fashion">Clothing & Fashion</option>
+              <option value="School Supplies">School Supplies</option>
+            </select>
+          </div>
+          
+          <div className="form-group">
+            <label htmlFor="details">Details</label>
+            <textarea
+              id="details"
+              name="details"
+              value={formData.details}
+              onChange={handleChange}
+              required
+              placeholder="Describe your item, including features and any defects"
+            />
+          </div>
+          
+          <div className="form-group">
+            <label>Product Image</label>
+            
+            <div className="upload-options">
+              <button 
+                type="button" 
+                className={`upload-option-btn ${uploadMethod === 'url' ? 'active' : ''}`}
+                onClick={() => setUploadMethod('url')}
+              >
+                Use URL
+              </button>
+              <button 
+                type="button" 
+                className={`upload-option-btn ${uploadMethod === 'file' ? 'active' : ''}`}
+                onClick={() => setUploadMethod('file')}
+              >
+                Upload File
+              </button>
+            </div>
+            
+            {uploadMethod === 'url' ? (
+              <input
+                type="text"
+                id="image_path"
+                name="image_path"
+                value={formData.image_path}
+                onChange={handleChange}
+                placeholder="Enter an image URL"
+              />
+            ) : (
+              <div className="file-upload-container">
+                <input
+                  type="file"
+                  id="image_file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  className="file-upload-input"
+                />
+                <label htmlFor="image_file" className="file-upload-label">
+                  Choose a file
+                </label>
+              </div>
+            )}
+            
+            {imageError && <div className="error-message">{imageError}</div>}
+            
+            {previewImage ? (
+              <div className="image-preview">
+                <img src={previewImage} alt="Product preview" />
+              </div>
+            ) : (
+              <div className="image-preview empty">
+                <span>No Image preview available</span>
+              </div>
+            )}
+          </div>
+          
+          <button 
+            type="submit" 
+            className="create-product-button"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Creating...' : 'List Item for Sale'}
+          </button>
+        </form>
+        
+        {/* Toast notification */}
+        {showToast && (
+          <GenZToast
+            message={toastMessage}
+            type={toastType}
+            onClose={() => setShowToast(false)}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChatsListPage() {
+  const { authAxios, isAuthenticated, currentUser } = useAuth();
+  const navigate = useNavigate();
+  const [chats, setChats] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/');
+      return;
+    }
+
+    const fetchChats = async () => {
+      try {
+        console.log('Fetching chats for user');
+        const response = await authAxios.get('/chats');
+        console.log('Chats received:', response.data);
+        setChats(response.data);
+      } catch (err) {
+        console.error('Error fetching chats:', err.response?.data || err.message);
+        setToastMessage(err.response?.data?.error || 'Failed to load chats. Please try again.');
+        setToastType('error');
+        setShowToast(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchChats();
+  }, [authAxios, isAuthenticated, navigate]);
+
+  if (loading) return (
+    <div className="chats-list-page">
+      <div className="loading">Loading chats...</div>
+    </div>
+  );
+
+  return (
+    <div className="chats-list-page">
+      <div className="chats-header">
+      <h1>Messages</h1>
+        <p className="role-legend">
+          <span className="legend-item"><span className="role-dot seller"></span> You are selling</span>
+          <span className="legend-item"><span className="role-dot buyer"></span> You are buying</span>
+        </p>
+      </div>
+      
+      {chats.length === 0 ? (
+        <div className="no-chats">
+          <p>You don't have any messages yet.</p>
+          <Link to="/market" className="browse-button">Browse Products</Link>
+        </div>
+      ) : (
+        <div className="chats-list">
+          {chats.map(chat => {
+            // Determine if the current user is the seller or buyer in this chat
+            const isSeller = currentUser.userId === chat.seller_id;
+            
+            return (
+              <Link to={`/chats/${chat.id}`} key={chat.id} className={`chat-item ${isSeller ? 'seller-chat' : 'buyer-chat'}`}>
+              <div className="chat-item-image">
+                <img 
+                    src={chat.product_image || "/api/placeholder/150/150"} 
+                    alt={chat.product_name || "Product"} 
+                />
+              </div>
+              <div className="chat-item-details">
+                  <div className="chat-role-indicator">
+                    <span className={`role-badge ${isSeller ? 'seller' : 'buyer'}`}>
+                      {isSeller ? 'SELLING' : 'BUYING'}
+                    </span>
+                  </div>
+                  <h3 className="chat-item-title">{chat.product_name || "Unknown Product"}</h3>
+                  <p className="chat-item-price">${parseFloat(chat.product_price || 0).toLocaleString()}</p>
+                <p className="chat-contact">
+                    {isSeller
+                      ? `Buyer: ${chat.buyer_email}` 
+                      : `Seller: ${chat.seller_email}`}
+                </p>
+              </div>
+            </Link>
+            );
+          })}
+        </div>
+      )}
+      
+      {showToast && (
+        <GenZToast
+          message={toastMessage}
+          type={toastType}
+          onClose={() => setShowToast(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ChatPage() {
+  const { id } = useParams();
+  const { authAxios, currentUser, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const [chat, setChat] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [sending, setSending] = useState(false);
+  const messagesEndRef = useRef(null);
+  const [socket, setSocket] = useState(null);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
+
+  // For debugging
+  useEffect(() => {
+    console.log("Current user:", currentUser);
+  }, [currentUser]);
+
+  // Initialize socket connection
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/');
+      return;
+    }
+
+    console.log('Initializing socket connection...');
+    // Initialize socket.io client with auth token
+    const token = localStorage.getItem('token');
+    console.log('Using token for socket auth:', token ? 'Token exists' : 'No token');
+
+    const newSocket = io(SOCKET_URL, {
+      auth: { token },
+      transports: ['websocket', 'polling'], // Try both websocket and polling
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
+    });
+
+    newSocket.on('connect', () => {
+      console.log('Socket connected successfully!', newSocket.id);
+      setSocketConnected(true);
+      
+      // Join the chat room once connected
+      console.log(`Joining chat room: ${id}`);
+      newSocket.emit('join_chat', id);
+    });
+
+    newSocket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error.message);
+      // Try to reconnect automatically
+    });
+
+    newSocket.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+      setSocketConnected(false);
+    });
+
+    newSocket.on('error', (error) => {
+      console.error('Socket error:', error);
+    });
+
+    setSocket(newSocket);
+
+    // Cleanup function
+    return () => {
+      console.log('Cleaning up socket connection');
+      if (newSocket) {
+        newSocket.disconnect();
+      }
+    };
+  }, [isAuthenticated, navigate, id]);
+
+  // Listen for new messages and other events
+  useEffect(() => {
+    if (!socket) return;
+
+    console.log('Setting up message listeners');
+
+    // Listen for new messages from other users
+    socket.on('new_message', (message) => {
+      console.log('Received new message via socket:', message);
+      
+      // Only add messages from others, not from ourselves (to prevent duplicates)
+      if (message.sender_id !== currentUser.userId) {
+        setMessages(prevMessages => {
+          // Avoid duplicate messages
+          if (prevMessages.some(m => m.id === message.id)) {
+            return prevMessages;
+          }
+          // Use a safe immutable update
+          return [...prevMessages, message];
+        });
+      }
+    });
+    
+    // Cleanup on unmount
+    return () => {
+      console.log('Removing socket listeners');
+      socket.off('new_message');
+    };
+  }, [socket, currentUser]);
+
+  // Fetch chat and message data
+  useEffect(() => {
+    const fetchChatAndMessages = async () => {
+      try {
+        console.log(`Fetching chat data for ID: ${id}`);
+        const chatResponse = await authAxios.get(`/chats/${id}`);
+        setChat(chatResponse.data);
+        console.log('Chat data received:', chatResponse.data);
+        
+        const messagesResponse = await authAxios.get(`/chats/${id}/messages`);
+        console.log('Messages received:', messagesResponse.data.length);
+        setMessages(messagesResponse.data);
+        
+        // Initial scroll to bottom after loading messages
+        setTimeout(() => {
+          if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
+          }
+        }, 100);
+      } catch (err) {
+        console.error('Error fetching chat data:', err.response?.data || err.message);
+        setToastMessage(err.response?.data?.error || 'Failed to load chat');
+        setToastType('error');
+        setShowToast(true);
+        setTimeout(() => {
+        navigate('/chats');
+        }, 2000);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (isAuthenticated && id) {
+      fetchChatAndMessages();
+    }
+  }, [authAxios, id, isAuthenticated, navigate]);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    
+    const messageText = newMessage.trim();
+    if (!messageText || sending) return;
+    
+    setSending(true);
+    console.log(`Sending message in chat ${id}: ${messageText}`);
+    
+    // Clear input immediately for better UX
+    setNewMessage('');
+    
+    // Add optimistic message (temporary)
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMessage = {
+      id: tempId,
+      chat_id: id,
+      sender_id: currentUser.userId,
+      message: messageText,
+      created_at: new Date().toISOString(),
+      sender_email: currentUser.email,
+      temporary: true
+    };
+    
+    // Add to state with immutable update pattern
+    setMessages(prev => [...prev, optimisticMessage]);
+    
+    try {
+      let finalMessageId = tempId;
+      
+      // Always use REST API for reliable message persistence
+      console.log('Sending via REST API');
+      const response = await authAxios.post(`/chats/${id}/messages`, {
+        message: messageText
+      });
+      
+      console.log('Message sent successfully via REST API:', response.data);
+      finalMessageId = response.data.id;
+      
+      // Replace optimistic message with real one
+      setMessages(prev => prev.map(msg => 
+        msg.id === tempId ? {...response.data, id: response.data.id} : msg
+      ));
+      
+      // Also send through socket for real-time delivery to other users if connected
+      if (socket && socketConnected) {
+        console.log('Also notifying via socket');
+        socket.emit('new_message_notification', {
+          chat_id: id,
+          message_id: finalMessageId
+        });
+      }
+    } catch (err) {
+      console.error('Error sending message:', err.response?.data || err.message);
+      
+      // Remove optimistic message on failure
+      setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      
+      // Put the text back in the input field
+      setNewMessage(messageText);
+      
+      // Show toast notification instead of alert
+      setToastMessage(err.response?.data?.error || 'Failed to send message');
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const formatMessageTime = (timestamp) => {
+    const messageDate = new Date(timestamp);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    // Check if message is from today
+    if (messageDate.toDateString() === today.toDateString()) {
+      return messageDate.toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: true 
+      });
+    }
+    
+    // Check if message is from yesterday
+    if (messageDate.toDateString() === yesterday.toDateString()) {
+      return `Yesterday ${messageDate.toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: true 
+      })}`;
+    }
+    
+    // Otherwise show date and time
+    return messageDate.toLocaleDateString([], {
+      month: 'short',
+      day: 'numeric'
+    }) + ' ' + messageDate.toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    });
+  };
+
+  // Check if a message was sent by the current user
+  const isMessageFromCurrentUser = (message) => {
+    return message.sender_id === currentUser.userId;
+  };
+
+  if (loading) return (
+    <div className="chat-page">
+      <div className="loading">Loading chat...</div>
+    </div>
+  );
+
+  return (
+    <div className="chat-page">
+      <div className="chat-container">
+        <div className="chat-header">
+          <Link to="/chats" className="back-button">← Back to Messages</Link>
+          <div className="chat-header-info">
+            <h2>{chat?.product_name || "Unknown Product"}</h2>
+            <p className="chat-header-price">${parseFloat(chat?.product_price || 0).toLocaleString()}</p>
+            <p className="chat-header-users">
+              {currentUser.userId === chat?.seller_id 
+                ? `Chatting with buyer: ${chat?.buyer_email}` 
+                : `Chatting with seller: ${chat?.seller_email}`}
+            </p>
+          </div>
+          <div className="role-indicator">
+            <span className={`role-badge ${currentUser.userId === chat?.seller_id ? 'seller' : 'buyer'}`}>
+              {currentUser.userId === chat?.seller_id ? 'SELLING' : 'BUYING'}
+            </span>
+          </div>
+        </div>
+        
+        <div className="messages-container">
+          {messages.length === 0 ? (
+            <div className="no-messages">
+              <p>No messages yet. Start the conversation!</p>
+            </div>
+          ) : (
+            <>
+              {messages.map((message, index) => {
+                // Skip rendering invalid messages
+                if (!message || !message.id) {
+                  console.warn('Skipping invalid message:', message);
+                  return null;
+                }
+                
+                try {
+                  // Determine if this is the first message of the day
+                  const showDate = index === 0 || 
+                    new Date(message.created_at).toDateString() !== 
+                    new Date(messages[index - 1].created_at).toDateString();
+                  
+                  // Determine if message is from current user
+                  const isFromCurrentUser = isMessageFromCurrentUser(message);
+                  
+                  // Determine if the previous message was from the same sender
+                  const sameSenderAsPrevious = index > 0 && 
+                    message.sender_id === messages[index - 1].sender_id;
+                  
+                  return (
+                    <Fragment key={message.id}>
+                      {showDate && (
+                        <div className="message-date-separator">
+                          <span>{new Date(message.created_at).toLocaleDateString([], {
+                            weekday: 'long',
+                            month: 'long',
+                            day: 'numeric'
+                          })}</span>
+                        </div>
+                      )}
+                      <div 
+                        className={`message ${isFromCurrentUser ? 'sent' : 'received'} ${sameSenderAsPrevious ? 'grouped' : ''} ${message.temporary ? 'pending' : ''}`}
+                      >
+                        <div className="message-content">
+                          <p>{message.message}</p>
+                          <span className="message-time">
+                            {formatMessageTime(message.created_at)}
+                            {message.temporary && <span className="message-status">Sending...</span>}
+                          </span>
+                        </div>
+                      </div>
+                    </Fragment>
+                  );
+                } catch (err) {
+                  console.error('Error rendering message:', err, message);
+                  return null;
+                }
+              })}
+            </>
+          )}
+          <div ref={messagesEndRef} className="messages-end-ref" />
+        </div>
+        
+        <form onSubmit={handleSendMessage} className="message-form">
+          <textarea
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            placeholder="Type a message..."
+            className="message-input"
+            autoComplete="off"
+            disabled={sending}
+            onKeyDown={(e) => {
+              // Submit on Enter (without Shift)
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage(e);
+              }
+            }}
+          />
+          <button 
+            type="submit" 
+            className="send-button" 
+            disabled={sending || !newMessage.trim()}
+            aria-label="Send message"
+          >
+            {sending ? '...' : ''}
+          </button>
+        </form>
+          </div>
+      
+      {showToast && (
+        <GenZToast
+          message={toastMessage}
+          type={toastType}
+          onClose={() => setShowToast(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ProtectedRoute({ children }) {
+  const { isAuthenticated } = useAuth();
+  return isAuthenticated ? children : <Navigate to="/" />;
+}
+
+function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
+
+  return (
+    <Router>
+      <AuthProvider>
+        <CartProvider>
+          <MessagesProvider>
+            <PageTitle />
+        <AppContent />
+          </MessagesProvider>
+        </CartProvider>
+      </AuthProvider>
+    </Router>
+  );
+}
+
+function AppContent() {
+  const { isAuthenticated, currentUser } = useAuth();
+  const [toast, setToast] = useState(null);
+  
+  return (
+    <>
+      <HeadBar />
+      <Routes>
+        <Route path="/" element={!isAuthenticated ? <SignInPage /> : <Navigate to="/home" />} />
+        <Route path="/home" element={<HomePage />} />
+        <Route path="/market" element={<MarketPage />} />
+        <Route path="/market/:id" element={<ProtectedRoute><ProductDetailPage /></ProtectedRoute>} />
+        <Route path="/create-product" element={<ProtectedRoute><CreateProductPage /></ProtectedRoute>} />
+        <Route path="/my-products" element={<ProtectedRoute><ProductManagementPage /></ProtectedRoute>} />
+        <Route path="/cart" element={<ProtectedRoute><CartPage /></ProtectedRoute>} />
+        <Route path="/chats" element={<ProtectedRoute><ChatsListPage /></ProtectedRoute>} />
+        <Route path="/chats/:id" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+        <Route path="/discover" element={<ProtectedRoute><SwipeDiscovery /></ProtectedRoute>} />
+      </Routes>
+      <SiteFooter />
+      <HelpChatWidget />
+      {toast && <GenZToast {...toast} onClose={() => setToast(null)} />}
+    </>
+  );
+}
+
+// Add a footer component
+function SiteFooter() {
+  return (
+    <footer className="site-footer">
+      <div className="footer-container">
+        <div className="footer-section">
+          <h3>Lion Bay</h3>
+          <p>The marketplace where you can actually get stuff before the semester ends. You heard!</p>
+        </div>
+        
+        <div className="footer-section">
+          <h3>Quick Links</h3>
+          <ul>
+            <li><Link to="/home">Home</Link></li>
+            <li><Link to="/market">Explore Stuff</Link></li>
+            <li><Link to="/create-product">Sell Your Stuff</Link></li>
+          </ul>
+        </div>
+        
+        <div className="footer-section">
+          <h3>Find Your Way</h3>
+          <div className="site-map">
+            <div className="site-map-item">
+              <span className="site-map-icon"><i className="fas fa-home"></i></span>
+              <Link to="/home">Home</Link>
+            </div>
+            <div className="site-map-item">
+              <span className="site-map-icon"><i className="fas fa-shopping-cart"></i></span>
+              <Link to="/market">Find Things</Link>
+            </div>
+            <div className="site-map-item">
+              <span className="site-map-icon"><i className="fas fa-plus"></i></span>
+              <Link to="/create-product">Sell Things</Link>
+            </div>
+            <div className="site-map-item">
+              <span className="site-map-icon"><i className="fas fa-comment"></i></span>
+              <Link to="/chats">Slide in DMs</Link>
+            </div>
+            <div className="site-map-item">
+              <span className="site-map-icon"><i className="fas fa-user"></i></span>
+              <Link to="/">Login</Link>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="footer-bottom">
+        <p>&copy; {new Date().getFullYear()} Lion Bay. Better, faster, closer than those other guys.</p>
+      </div>
+    </footer>
+  );
+}
+
+function CartPage() {
+  const { authAxios, isAuthenticated, currentUser } = useAuth();
+  const { updateCartCount } = useCart();
+  const { updateUnreadCount } = useMessages();
+  const navigate = useNavigate();
+  const [cartItems, setCartItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('error');
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/');
+      return;
+    }
+
+    const fetchCartItems = async () => {
+      try {
+        console.log('Fetching cart items for user');
+        const response = await authAxios.get('/cart');
+        console.log('Cart items received:', response.data);
+        setCartItems(response.data);
+      } catch (err) {
+        console.error('Error fetching cart items:', err.response?.data || err.message);
+        setToastMessage(err.response?.data?.error || 'Failed to load cart items. Please try again.');
+        setToastType('error');
+        setShowToast(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCartItems();
+  }, [authAxios, isAuthenticated, navigate]);
+
+  const handleRemoveFromCart = async (cartItemId) => {
+    try {
+      await authAxios.delete(`/cart/${cartItemId}`);
+      
+      // Update state to remove the item
+      setCartItems(prevItems => prevItems.filter(item => item.id !== cartItemId));
+      
+      // Update cart count
+      if (updateCartCount) {
+        updateCartCount();
+      }
+      
+      setToastMessage('Item yeeted from your cart! 👋');
+      setToastType('success');
+      setShowToast(true);
+    } catch (err) {
+      console.error('Error removing from cart:', err.response?.data || err.message);
+      setToastMessage(err.response?.data?.error || 'Remove failed. The cart said no! 🙄');
+      setToastType('error');
+      setShowToast(true);
+    }
+  };
+
+  const handleContactSeller = async (productId, sellerId) => {
+    try {
+      // Create or get chat for this product
+      const response = await authAxios.post('/chats', {
+        product_id: productId,
+        seller_id: sellerId
+      });
+      
+      console.log("Chat created/retrieved:", response.data);
+      
+      // Update the cart item to CONTACTED type
+      const cartItem = cartItems.find(item => item.product_id === productId);
+      if (cartItem) {
+        await authAxios.put(`/cart/${cartItem.id}`, {
+          cart_type: 'CONTACTED',
+          chat_id: response.data.id
+        });
+        
+        // Update the local state
+        setCartItems(prevItems => 
+          prevItems.map(item => 
+            item.id === cartItem.id
+              ? { ...item, cart_type: 'CONTACTED', chat_id: response.data.id }
+              : item
+          )
+        );
+        
+        // Update cart count (not needed for this operation, but added for consistency)
+        if (updateCartCount) {
+          updateCartCount();
+        }
+      }
+      
+      // Update unread message count
+      if (updateUnreadCount) {
+        updateUnreadCount();
+      }
+      
+      // Show success toast
+      setToastMessage("Seller connection vibe check passed! ✌️ Message sent!");
+      setToastType("success");
+      setShowToast(true);
+      
+      // Wait a moment before navigating to allow toast to be seen
+      setTimeout(() => {
+        // Navigate to the chat
+        navigate(`/chats/${response.data.id}`);
+      }, 1500);
+      
+    } catch (err) {
+      console.error('Error contacting seller:', err.response?.data || err.message);
+      setToastMessage(err.response?.data?.error || 'Message couldn\'t go through. Big yikes! 😬');
+      setToastType('error');
+      setShowToast(true);
+    }
+  };
+
+  if (loading) return (
+    <div className="cart-page">
+      <div className="loading">Loading cart items...</div>
+    </div>
+  );
+
+  // Separate items into contacted and cart-only
+  const contactedItems = cartItems.filter(item => item.cart_type === 'CONTACTED');
+  const cartOnlyItems = cartItems.filter(item => item.cart_type === 'CART_ONLY');
+
+  return (
+    <div className="cart-page">
+      <div className="cart-container">
+        <h1>Your Cart</h1>
+        
+        {cartItems.length === 0 ? (
+          <div className="empty-cart">
+            <p>Your cart is empty.</p>
+            <Link to="/market" className="browse-button">Browse Products</Link>
+          </div>
+        ) : (
+          <>
+            {contactedItems.length > 0 && (
+              <div className="cart-section">
+                <h2 className="cart-section-title">Items You've Contacted Sellers About</h2>
+                <div className="cart-items-list">
+                  {contactedItems.map(item => (
+                    <div key={item.id} className="cart-item">
+                      <div className="cart-item-image">
+                        <img 
+                          src={item.product_image || "/api/placeholder/150/150"} 
+                          alt={item.product_name || "Product"} 
+                        />
+                      </div>
+                      <div className="cart-item-details">
+                        <h3 className="cart-item-title">{item.product_name || "Unknown Product"}</h3>
+                        <p className="cart-item-price">${parseFloat(item.product_price || 0).toLocaleString()}</p>
+                        <p className="cart-item-condition">Condition: {item.product_condition}</p>
+                        <p className="cart-seller">Seller: {item.seller_email}</p>
+                        <div className="cart-item-actions">
+                          <Link to={`/chats/${item.chat_id}`} className="go-to-chat-button">
+                            Go to Chat
+                          </Link>
+                          <button 
+                            onClick={() => handleRemoveFromCart(item.id)}
+                            className="remove-from-cart-button"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {cartOnlyItems.length > 0 && (
+              <div className="cart-section">
+                <h2 className="cart-section-title">Items in Your Cart</h2>
+                <div className="cart-items-list">
+                  {cartOnlyItems.map(item => (
+                    <div key={item.id} className="cart-item">
+                      <div className="cart-item-image">
+                        <img 
+                          src={item.product_image || "/api/placeholder/150/150"} 
+                          alt={item.product_name || "Product"} 
+                        />
+                      </div>
+                      <div className="cart-item-details">
+                        <h3 className="cart-item-title">{item.product_name || "Unknown Product"}</h3>
+                        <p className="cart-item-price">${parseFloat(item.product_price || 0).toLocaleString()}</p>
+                        <p className="cart-item-condition">Condition: {item.product_condition}</p>
+                        <p className="cart-seller">Seller: {item.seller_email}</p>
+                        <div className="cart-item-actions">
+                          <button 
+                            onClick={() => handleContactSeller(item.product_id, item.seller_id)}
+                            className="contact-seller-button"
+                          >
+                            Contact Seller
+                          </button>
+                          <button 
+                            onClick={() => handleRemoveFromCart(item.id)}
+                            className="remove-from-cart-button"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            <div className="cart-footer">
+              <Link to="/market" className="continue-shopping-button">
+                Continue Shopping
+              </Link>
+            </div>
+          </>
+        )}
+      </div>
+      
+      {showToast && (
+        <GenZToast
+          message={toastMessage}
+          type={toastType}
+          onClose={() => setShowToast(false)}
+        />
+      )}
+    </div>
+  );
+}
