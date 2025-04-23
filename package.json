@@ -11,6 +11,7 @@
     "build": "./build-production.sh",
     "dev": "cd marketCU && npm run dev",
     "server": "cd marketCU/server && node server.js",
+    "server3003": "cd marketCU/server && PORT=3003 node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
