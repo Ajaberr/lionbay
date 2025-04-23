@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lion Bay API</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #1c4587;
+            margin-top: 0;
+        }
+        .api-info {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .endpoint {
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #fff;
+            border-radius: 4px;
+        }
+        .error-section {
+            margin-top: 30px;
+            padding: 15px;
+            background-color: #ffeaea;
+            border-radius: 8px;
+            border-left: 4px solid #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Lion Bay API</h1>
+        <p>The Lion Bay API is running, but the frontend build was not found.</p>
+        
+        <div class="api-info">
+            <h2>Available API Endpoints</h2>
+            <div class="endpoint">
+                <strong>GET /api/products</strong> - Get all products
+            </div>
+            <div class="endpoint">
+                <strong>GET /api/products/:id</strong> - Get product by ID
+            </div>
+            <div class="endpoint">
+                <strong>POST /api/auth/verify-email</strong> - Start email verification
+            </div>
+        </div>
+        
+        <div class="error-section">
+            <h3>Frontend Build Issue</h3>
+            <p>The frontend build files could not be found. This might be due to a build failure or missing configuration.</p>
+            <p>Please check the build logs for more information or contact the administrator.</p>
+        </div>
+    </div>
+</body>
+</html> 

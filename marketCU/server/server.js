@@ -1350,6 +1350,11 @@ io.on('connection', (socket) => {
 
 // Catch-all route to serve index.html for client-side routing
 app.get('*', (req, res) => {
+  // Skip API routes
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  }
+  
   // Check multiple possible locations for index.html
   const possibleIndexPaths = [
     path.join(__dirname, '../dist/index.html'),
@@ -1365,6 +1370,13 @@ app.get('*', (req, res) => {
       console.log('Serving index.html from:', indexPath);
       return res.sendFile(indexPath);
     }
+  }
+  
+  // Try to use the fallback HTML
+  const fallbackPath = path.join(__dirname, 'fallback-index.html');
+  if (fs.existsSync(fallbackPath)) {
+    console.log('No frontend build found! Serving fallback index.html');
+    return res.sendFile(fallbackPath);
   }
   
   // If no index.html found, return debugging info
