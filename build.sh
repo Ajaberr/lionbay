@@ -142,6 +142,13 @@ async function fixRenderDbConnection() {
   if (process.env.DATABASE_URL) {
     const maskedURL = process.env.DATABASE_URL.replace(/:[^:@]*@/, ':***@');
     console.log(`DATABASE_URL is set: ${maskedURL}`);
+    
+    // Check if the URL is in the correct format with region
+    const fixedUrl = ensureCorrectDbUrl(process.env.DATABASE_URL);
+    if (fixedUrl !== process.env.DATABASE_URL) {
+      console.log('Fixed DATABASE_URL format');
+      process.env.DATABASE_URL = fixedUrl;
+    }
   } else {
     console.log('DATABASE_URL is not set in the environment');
     
@@ -165,6 +172,10 @@ async function fixRenderDbConnection() {
           
           if (dbUrlMatch && dbUrlMatch[1]) {
             foundDbUrl = dbUrlMatch[1];
+            
+            // Fix URL format if needed
+            foundDbUrl = ensureCorrectDbUrl(foundDbUrl);
+            
             const maskedFoundUrl = foundDbUrl.replace(/:[^:@]*@/, ':***@');
             console.log(`Found DATABASE_URL in ${envPath}: ${maskedFoundUrl}`);
             
@@ -181,6 +192,17 @@ async function fixRenderDbConnection() {
       } else {
         console.log(`No .env file found at: ${envPath}`);
       }
+    }
+    
+    // Use hardcoded internal URL as last resort if specified
+    if (!foundDbUrl && process.argv.length > 2) {
+      foundDbUrl = process.argv[2];
+      console.log('Using command line provided DATABASE_URL');
+      
+      // Fix URL format if needed
+      foundDbUrl = ensureCorrectDbUrl(foundDbUrl);
+      
+      process.env.DATABASE_URL = foundDbUrl;
     }
     
     // Create/update root .env file with the found DATABASE_URL
@@ -218,12 +240,30 @@ async function fixRenderDbConnection() {
     }
   }
   
+  // Function to ensure the database URL is in the correct format
+  function ensureCorrectDbUrl(url) {
+    if (!url) return url;
+    
+    // Check if the URL is missing the region component
+    if (url.includes('dpg-') && !url.includes('.oregon-postgres.render.com')) {
+      // Fix for internal Render URL missing region
+      url = url.replace(/(@dpg-[^\/]+)\//, '$1.oregon-postgres.render.com/');
+      console.log('Fixed URL to include region component');
+    }
+    
+    return url;
+  }
+  
   // 2. Test database connection
   console.log('\nTesting database connection:');
   if (!process.env.DATABASE_URL) {
     console.error('No DATABASE_URL available, cannot test connection');
     return;
   }
+  
+  // Log the final DATABASE_URL being used (masked)
+  const finalMaskedURL = process.env.DATABASE_URL.replace(/:[^:@]*@/, ':***@');
+  console.log(`Using DATABASE_URL: ${finalMaskedURL}`);
   
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
@@ -274,6 +314,85 @@ async function fixRenderDbConnection() {
     console.error('❌ Database connection error:', error.message);
     if (error.code) {
       console.error(`Error code: ${error.code}`);
+    }
+    
+    // Attempt to fix common connection issues
+    if (error.message.includes('no pg_hba.conf entry') || 
+        error.message.includes('password authentication failed')) {
+      console.log('\nAttempting to fix authentication issues...');
+      // Try alternative connection string format
+      const altDbUrl = process.env.DATABASE_URL
+        .replace('.oregon-postgres.render.com', '-a.oregon-postgres.render.com');
+      
+      console.log('Trying alternative DB URL format...');
+      try {
+        const altPool = new Pool({
+          connectionString: altDbUrl,
+          ssl: {
+            rejectUnauthorized: false
+          }
+        });
+        
+        const altClient = await altPool.connect();
+        console.log('✅ Successfully connected with alternative URL format');
+        
+        // Update the environment variable with working URL
+        process.env.DATABASE_URL = altDbUrl;
+        
+        // Update .env file with working URL
+        try {
+          const rootEnvPath = path.join(process.cwd(), '.env');
+          if (fs.existsSync(rootEnvPath)) {
+            let envContent = fs.readFileSync(rootEnvPath, 'utf8');
+            envContent = envContent.replace(
+              /DATABASE_URL=.+?(\r?\n|$)/,
+              `DATABASE_URL=${altDbUrl}$1`
+            );
+            fs.writeFileSync(rootEnvPath, envContent);
+            console.log('Updated .env file with working URL');
+          }
+        } catch (envError) {
+          console.error('Error updating .env file:', envError.message);
+        }
+        
+        // Continue with alt client
+        const tablesResult = await altClient.query(`
+          SELECT table_name 
+          FROM information_schema.tables 
+          WHERE table_schema = 'public'
+        `);
+        
+        if (tablesResult.rows.length === 0) {
+          console.log('❌ No tables found in the database');
+          console.log('Running database initialization...');
+          await initDatabase(altClient);
+        } else {
+          console.log(`✅ Found ${tablesResult.rows.length} tables`);
+          
+          // Check if products table exists and has data
+          const productTableExists = tablesResult.rows.some(row => 
+            row.table_name === 'products'
+          );
+          
+          if (productTableExists) {
+            const productCount = await altClient.query('SELECT COUNT(*) FROM products');
+            console.log(`Products in database: ${productCount.rows[0].count}`);
+            
+            if (parseInt(productCount.rows[0].count) === 0) {
+              console.log('Products table is empty, adding sample products...');
+              await addSampleProducts(altClient);
+            }
+          } else {
+            console.log('Products table not found, running initialization...');
+            await initDatabase(altClient);
+          }
+        }
+        
+        altClient.release();
+        await altPool.end();
+      } catch (altError) {
+        console.error('Alternative connection also failed:', altError.message);
+      }
     }
   } finally {
     await pool.end();
@@ -457,12 +576,17 @@ async function addSampleProducts(client) {
   }
 }
 
-fixRenderDbConnection();
+// Call with command line arg if provided
+const cmdLineDbUrl = process.argv.length > 2 ? process.argv[2] : null;
+fixRenderDbConnection(cmdLineDbUrl);
 EOL
 
-# Run database initialization using our comprehensive fix script
+# Define the internal Render database URL - this is the URL format Render uses internally
+INTERNAL_RENDER_DB_URL="postgresql://cump_db_user:2x5LNUrbJwC1rrA4MPmVMkrk8fjZU9QW@dpg-cvdo1ulumphs73bjbp8g-a/cump_db"
+
+# Run database initialization using our comprehensive fix script with the internal URL
 echo "Running database fix and initialization script..."
-node render-fix.js
+node render-fix.js "$INTERNAL_RENDER_DB_URL"
 
 # Also run the old init-database.js as a fallback
 if [ -f "init-database.js" ]; then
