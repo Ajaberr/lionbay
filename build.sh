@@ -10,6 +10,14 @@ npm install
 cd marketCU
 npm install
 
+# Make sure to install the server dependencies if there's a separate package.json
+if [ -d "server" ] && [ -f "server/package.json" ]; then
+  echo "Installing server dependencies..."
+  cd server
+  npm install
+  cd ..
+fi
+
 echo "Building the client..."
 npm run build
 
