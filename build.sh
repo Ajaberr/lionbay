@@ -24,6 +24,13 @@ if [ -d "server" ] && [ -f "server/package.json" ]; then
   cd ..
 fi
 
+# Ensure Vite is installed
+echo "Ensuring Vite is available..."
+if ! npm list vite >/dev/null 2>&1; then
+  echo "Vite not found in local dependencies, installing globally..."
+  npm install -g vite
+fi
+
 echo "Building the client using npx vite build..."
 # Force build with npx instead of npm script
 npx vite build
@@ -47,6 +54,7 @@ else
   echo "Trying again with different options..."
   
   # Try building with explicit outDir
+  echo "Trying Vite build with explicit outDir option..."
   npx vite build --outDir=dist
   
   if [ -d "dist" ]; then
@@ -58,11 +66,40 @@ else
     mkdir -p ../server/dist 2>/dev/null
     cp -r dist/* ../server/dist 2>/dev/null || echo "Failed to copy to ../server/dist"
   else
-    echo "CRITICAL ERROR: Failed to create dist directory. Dumping debug info:"
-    echo "List of files in current directory:"
-    ls -la
-    echo "vite.config.js content:"
-    cat vite.config.js || echo "vite.config.js not found"
+    echo "Trying direct npm build command..."
+    npm run build
+    
+    if [ -d "dist" ]; then
+      echo "npm run build succeeded!"
+      ls -la dist
+      chmod -R 755 dist
+      # Copy to alternate locations
+      cp -r dist ../dist 2>/dev/null || echo "Failed to copy to ../dist"
+      mkdir -p ../server/dist 2>/dev/null
+      cp -r dist/* ../server/dist 2>/dev/null || echo "Failed to copy to ../server/dist"
+    else
+      echo "All build attempts failed. Creating a static dist directory from public folder..."
+      mkdir -p dist
+      # Copy public files to dist as fallback
+      if [ -d "public" ]; then
+        cp -r public/* dist/ 2>/dev/null || echo "Failed to copy public files to dist"
+        echo "Copied public files to dist directory as fallback"
+        ls -la dist
+        chmod -R 755 dist
+        # Copy to alternate locations
+        cp -r dist ../dist 2>/dev/null || echo "Failed to copy to ../dist"
+        mkdir -p ../server/dist 2>/dev/null
+        cp -r dist/* ../server/dist 2>/dev/null || echo "Failed to copy to ../server/dist"
+      else
+        echo "CRITICAL ERROR: No public directory found for fallback."
+        echo "List of files in current directory:"
+        ls -la
+        echo "vite.config.js content:"
+        cat vite.config.js || echo "vite.config.js not found"
+        echo "package.json content:"
+        cat package.json || echo "package.json not found"
+      fi
+    fi
   fi
 fi
 

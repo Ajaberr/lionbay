@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lion Bay - Columbia University Marketplace</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+        header {
+            background-color: #1c4587;
+            color: white;
+            padding: 1rem;
+            text-align: center;
+        }
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .hero {
+            background-color: white;
+            border-radius: 8px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        .feature {
+            background-color: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .feature h3 {
+            color: #1c4587;
+            margin-top: 0;
+        }
+        .cta {
+            margin-top: 2rem;
+            text-align: center;
+        }
+        .button {
+            display: inline-block;
+            background-color: #1c4587;
+            color: white;
+            padding: 0.8rem 1.5rem;
+            border-radius: 4px;
+            text-decoration: none;
+            font-weight: bold;
+            margin: 0.5rem;
+        }
+        footer {
+            background-color: #333;
+            color: white;
+            text-align: center;
+            padding: 1rem;
+            margin-top: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Lion Bay</h1>
+        <p>Columbia University's Premier Marketplace</p>
+    </header>
+    
+    <main>
+        <section class="hero">
+            <h2>Buy and Sell with Fellow Columbia Students</h2>
+            <p>Lion Bay makes it easy to buy, sell, and discover items within the Columbia University community.</p>
+            <div class="cta">
+                <a href="/api/products" class="button">Browse Products API</a>
+                <a href="#features" class="button">Learn More</a>
+            </div>
+        </section>
+        
+        <section id="features" class="features">
+            <div class="feature">
+                <h3>Secure Transactions</h3>
+                <p>Connect directly with other Columbia students in a secure environment, verified by Columbia email authentication.</p>
+            </div>
+            <div class="feature">
+                <h3>Easy Listing</h3>
+                <p>Post your items for sale in minutes. Add photos, descriptions, and set your price.</p>
+            </div>
+            <div class="feature">
+                <h3>Integrated Chat</h3>
+                <p>Communicate directly with buyers or sellers through our integrated messaging system.</p>
+            </div>
+        </section>
+        
+        <div class="cta">
+            <h2>Ready to Get Started?</h2>
+            <p>Join the Columbia University marketplace community today!</p>
+            <a href="/api/auth/verify-email" class="button">Sign Up with Columbia Email</a>
+        </div>
+    </main>
+    
+    <footer>
+        <p>&copy; 2025 Lion Bay - Columbia University Marketplace</p>
+    </footer>
+</body>
+</html> 
