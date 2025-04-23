@@ -9,4 +9,8 @@ services:
       - key: NODE_ENV
         value: production
       - key: PORT
-        value: 3000 
+        value: 3000
+      - key: DATABASE_URL
+        sync: false  # User needs to set this value manually
+      - key: JWT_SECRET
+        generateValue: true # Generate a random value for JWT_SECRET 

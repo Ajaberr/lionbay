@@ -11,39 +11,116 @@ const { Resend } = require('resend');
 const nodemailer = require('nodemailer');
 const path = require('path');
 const fs = require('fs');
+const { addApiTestEndpoints } = require('./api-test');
 
 const app = express();
 const server = http.createServer(app);
+
+// Improved CORS configuration to handle both local and production environments
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://marketcu.onrender.com',
+  process.env.FRONTEND_URL
+].filter(Boolean); // Remove any undefined values
+
+console.log('Allowed CORS origins:', allowedOrigins);
+
+// Configure CORS with more detailed options
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl, etc)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      console.log(`CORS blocked request from origin: ${origin}`);
+      return callback(null, false);
+    }
+    return callback(null, true);
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+
+// Configure Socket.IO with CORS settings
 const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] }
+  cors: { 
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true
+  }
 });
 
-app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Serve static files from dist folder with multiple possible locations
-const possibleDistPaths = [
-  path.join(__dirname, '../dist'),              // ../dist
-  path.join(__dirname, '../../dist'),           // ../../dist 
-  path.join(__dirname, '../../marketCU/dist'),  // ../../marketCU/dist
-  path.join(process.cwd(), 'dist'),             // cwd/dist
-  path.join(process.cwd(), 'marketCU/dist')     // cwd/marketCU/dist
-];
+// Debug current working directory and paths
+console.log('Current working directory:', process.cwd());
+console.log('__dirname:', __dirname);
+console.log('NODE_ENV:', process.env.NODE_ENV);
 
-let distPathFound = false;
-for (const distPath of possibleDistPaths) {
-  if (fs.existsSync(distPath)) {
-    console.log('Frontend build found. Serving static files from:', distPath);
-    app.use(express.static(distPath));
-    distPathFound = true;
-    break;
-  }
+// Use the exact build path we confirmed exists for local development
+let distPath = '/Users/abdullahalzahrani/Projects/marketCU/marketCU/dist';
+
+// For Render or other production environments, use a different path
+if (process.env.NODE_ENV === 'production') {
+  distPath = path.join(__dirname, '../dist');
+  console.log('Using production build path:', distPath);
 }
 
-if (!distPathFound) {
-  console.log('WARNING: Frontend build not found in any expected location');
-  console.log('Searched in:', possibleDistPaths);
+console.log(`Checking dist path: ${distPath} - exists: ${fs.existsSync(distPath)}`);
+
+if (fs.existsSync(distPath)) {
+  console.log('Frontend build found. Serving static files from:', distPath);
+  app.use(express.static(distPath));
+  
+  // Add a catch-all route for client-side routing
+  app.get('*', (req, res, next) => {
+    // Skip API routes
+    if (req.path.startsWith('/api/')) {
+      return next();
+    }
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+  
+  console.log('Added catch-all route for SPA navigation');
+} else {
+  console.log('WARNING: Frontend build not found at:', distPath);
+  console.log('Attempting alternative dist locations...');
+  
+  // Try alternative dist locations
+  const alternativeDistPaths = [
+    path.join(__dirname, '../dist'),
+    path.join(__dirname, '../../dist'),
+    path.join(process.cwd(), 'dist')
+  ];
+  
+  let found = false;
+  for (const altPath of alternativeDistPaths) {
+    console.log(`Checking alternative path: ${altPath} - exists: ${fs.existsSync(altPath)}`);
+    if (fs.existsSync(altPath)) {
+      console.log('Frontend build found at alternative location:', altPath);
+      app.use(express.static(altPath));
+      
+      // Add a catch-all route for client-side routing
+      app.get('*', (req, res, next) => {
+        // Skip API routes
+        if (req.path.startsWith('/api/')) {
+          return next();
+        }
+        res.sendFile(path.join(altPath, 'index.html'));
+      });
+      
+      found = true;
+      break;
+    }
+  }
+  
+  if (!found) {
+    console.log('WARNING: No frontend build found in any location.');
+  }
 }
 
 // Initialize PostgreSQL pool for connection management
@@ -53,6 +130,9 @@ const pool = new Pool({
     rejectUnauthorized: false // Required for Render PostgreSQL connection
   }
 });
+
+// Add API test endpoints for easier debugging
+addApiTestEndpoints(app, pool);
 
 // Initialize Resend client with error handling
 const resend = process.env.RESEND_API_KEY 
