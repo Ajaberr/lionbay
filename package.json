@@ -1,11 +1,15 @@
 {
+  "name": "marketCU",
+  "version": "1.0.0",
+  "description": "Market App",
   "dependencies": {
+    "express": "^4.21.2",
     "puppeteer": "^24.7.0",
     "react-hot-toast": "^2.5.2",
     "react-toastify": "^11.0.5"
   },
   "scripts": {
     "build": "vite build",
-    "start": "node server.js"
+    "start": "cd marketCU && node server.js"
   }
 }

@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: marketcu
+    env: node
+    plan: free
+    buildCommand: ./build.sh
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000 
