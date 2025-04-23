@@ -1,7 +1,12 @@
 // render-start.js - Smart server starter for Render
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
+import fs from 'fs';
+import path from 'path';
+import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
+
+// Get current file path and directory for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Log environment for debugging
 console.log('Current directory:', process.cwd());
@@ -35,7 +40,8 @@ for (const serverPath of serverPaths) {
   if (fs.existsSync(fullPath)) {
     console.log(`Found server at ${fullPath}, starting...`);
     try {
-      require(fullPath);
+      // Use dynamic import instead of require
+      const module = await import(fullPath);
       serverStarted = true;
       break;
     } catch (err) {

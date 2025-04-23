@@ -3,8 +3,8 @@ console.log('Starting server from render-server.js');
 console.log('Current directory:', process.cwd());
 console.log('Directory contents:');
 
-const fs = require('fs');
-const { execSync } = require('child_process');
+import fs from 'fs';
+import { execSync } from 'child_process';
 
 // Log directory contents for debugging
 try {
@@ -36,7 +36,8 @@ for (const path of possiblePaths) {
     console.log(`Attempting to start server from: ${path}`);
     if (fs.existsSync(path)) {
       console.log(`Found server file at ${path}, starting...`);
-      require(path);
+      // Use dynamic import instead of require
+      const module = await import(path);
       serverStarted = true;
       break;
     } else {
@@ -52,7 +53,8 @@ if (!serverStarted) {
   // As a last resort, try to start Express directly
   try {
     console.log('Attempting to start a basic Express server...');
-    const express = require('express');
+    // Use dynamic import for express
+    const express = (await import('express')).default;
     const app = express();
     const PORT = process.env.PORT || 3000;
     
