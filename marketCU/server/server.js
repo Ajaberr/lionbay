@@ -9,6 +9,8 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const { Resend } = require('resend');
 const nodemailer = require('nodemailer');
+const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
@@ -19,6 +21,13 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Serve static files from dist folder if it exists
+const distPath = path.join(__dirname, '../dist');
+if (fs.existsSync(distPath)) {
+  console.log('Frontend build found. Serving static files from:', distPath);
+  app.use(express.static(distPath));
+}
 
 // Initialize PostgreSQL pool for connection management
 const pool = new Pool({
@@ -1320,6 +1329,16 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log(`Socket disconnected: ${socket.id}`);
   });
+});
+
+// Catch-all route to serve index.html for client-side routing
+app.get('*', (req, res) => {
+  const distPath = path.join(__dirname, '../dist');
+  if (fs.existsSync(path.join(distPath, 'index.html'))) {
+    res.sendFile(path.join(distPath, 'index.html'));
+  } else {
+    res.status(404).send('Frontend build not found. Please run npm run build first.');
+  }
 });
 
 // Start the server

@@ -21,4 +21,12 @@ fi
 echo "Building the client..."
 npm run build
 
+# Ensure the build directory exists
+if [ -d "dist" ]; then
+  echo "Frontend build created successfully at: $(pwd)/dist"
+  ls -la dist
+else
+  echo "WARNING: Frontend build directory not found!"
+fi
+
 echo "Build completed successfully" 
