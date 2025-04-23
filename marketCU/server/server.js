@@ -20,7 +20,7 @@ const server = http.createServer(app);
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
-  'http://localhost:3002',
+  'http://localhost:3003',
   'https://lionbay-api.onrender.com',
   'https://lionbay.com',
   process.env.FRONTEND_URL
@@ -1487,7 +1487,7 @@ app.get('*', (req, res) => {
 });
 
 // Start the server
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 3003;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 }); 

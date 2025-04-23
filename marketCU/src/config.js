@@ -9,15 +9,15 @@
 const isProduction = import.meta.env.PROD;
 
 // Base API URL - in production this uses the same origin,
-// in development it uses localhost:3002
+// in development it uses localhost:3003
 export const API_BASE_URL = isProduction 
   ? '' // Empty string means use the same origin in production
-  : 'http://localhost:3002';
+  : 'http://localhost:3003';
 
 // Socket.IO URL - follows the same pattern as API_BASE_URL
 export const SOCKET_URL = isProduction
   ? '' // Empty string means use the same origin in production
-  : 'http://localhost:3002';
+  : 'http://localhost:3003';
 
 // Debug mode toggle
 export const DEBUG_MODE = !isProduction;
