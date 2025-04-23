@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { useCart } from '../App';
 import ToastNotification from './ToastNotification';
 import '../styles/SwipeDiscovery.css';
-import { API } from '../api-fetcher';
 
 const SwipeDiscovery = () => {
   const { authAxios, isAuthenticated, currentUser } = useAuth();
@@ -62,11 +61,25 @@ const SwipeDiscovery = () => {
       setLoading(true);
       
       console.log("Attempting to fetch products...");
-      console.log("Auth token:", localStorage.getItem('authToken') ? "Token exists" : "No token found");
+      console.log("Auth token:", localStorage.getItem('token') ? "Token exists" : "No token found");
       
-      // Use our API service instead of direct fetch
-      const data = await API.getProducts();
+      // Use the full API URL instead of relative path
+      const apiUrl = 'http://localhost:3001/api/products';
+      console.log("Fetching from:", apiUrl);
       
+      const response = await fetch(apiUrl, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      console.log("Response status:", response.status);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
+      
+      const data = await response.json();
       console.log("Products fetched:", data.length);
       console.log("Sample product:", data.length > 0 ? JSON.stringify(data[0]) : "No products");
       
@@ -155,11 +168,25 @@ const SwipeDiscovery = () => {
     setLastSwipedProduct(product);
     
     try {
-      // Add to cart using our API service
-      await API.addToCart({
-        product_id: product.id,
-        cart_type: 'CART_ONLY'
+      // Add to cart with CART_ONLY type
+      const apiUrl = 'http://localhost:3001/api/cart';
+      console.log("Adding to cart:", product.id);
+      
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          product_id: product.id,
+          cart_type: 'CART_ONLY'
+        })
       });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
       
       // Update cart count without showing toast
       console.log("Product added to cart successfully, updating cart count");
@@ -364,29 +391,61 @@ const SwipeDiscovery = () => {
         return;
       }
       
-      // Create or get chat for this product using our API service
-      const chatData = await API.createChat({
-        product_id: lastSwipedProduct.id,
-        seller_id: lastSwipedProduct.seller_id
+      // Create or get chat for this product
+      const chatApiUrl = 'http://localhost:3001/api/chats';
+      console.log("Creating chat for product:", lastSwipedProduct.id);
+      
+      const chatResponse = await fetch(chatApiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          product_id: lastSwipedProduct.id,
+          seller_id: lastSwipedProduct.seller_id
+        })
       });
       
+      if (!chatResponse.ok) {
+        throw new Error(`HTTP error! Status: ${chatResponse.status}`);
+      }
+      
+      const chatData = await chatResponse.json();
+      
       // First get cart items to find the one with this product
-      const cartData = await API.getCart();
+      const cartApiUrl = 'http://localhost:3001/api/cart';
+      const cartResponse = await fetch(cartApiUrl, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!cartResponse.ok) {
+        throw new Error(`HTTP error! Status: ${cartResponse.status}`);
+      }
+      
+      const cartData = await cartResponse.json();
       const cartItem = cartData.find(item => item.product_id === lastSwipedProduct.id);
       
       if (cartItem) {
         // Update the cart item to CONTACTED type
-        await fetch(`/api/cart/${cartItem.id}`, {
+        const updateCartUrl = `http://localhost:3001/api/cart/${cartItem.id}`;
+        const updateResponse = await fetch(updateCartUrl, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
           },
           body: JSON.stringify({
             cart_type: 'CONTACTED',
             chat_id: chatData.id
           })
         });
+        
+        if (!updateResponse.ok) {
+          console.warn("Failed to update cart item type, but continuing...");
+        }
       }
       
       // Show success toast

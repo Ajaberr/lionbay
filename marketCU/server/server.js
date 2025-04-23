@@ -20,8 +20,9 @@ const server = http.createServer(app);
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
-  'http://localhost:3001',
-  'https://marketcu.onrender.com',
+  'http://localhost:3002',
+  'https://lionbay-api.onrender.com',
+  'https://lionbay.com',
   process.env.FRONTEND_URL
 ].filter(Boolean); // Remove any undefined values
 
@@ -1486,7 +1487,7 @@ app.get('*', (req, res) => {
 });
 
 // Start the server
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 }); 
