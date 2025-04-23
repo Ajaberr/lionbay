@@ -1,22 +1,25 @@
-import { useState, useContext, createContext, useEffect, useRef, Fragment } from 'react';
-import { BrowserRouter as Router, Route, Routes, Link, Navigate, useParams, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
+import { BrowserRouter as Router, Route, Routes, Navigate, Link, useNavigate, useParams, useLocation } from 'react-router-dom';
+import axios from 'axios';
+import io from 'socket.io-client';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
 import './Chat.css';
-import logo from './assets/lion-logo.svg';
-import axios from 'axios';
-import { io } from 'socket.io-client';
-import LoginPage from './components/LoginPage';
-import HomePage from './components/HomePage';
-import ToastNotification from './components/ToastNotification';
-import HelpChatWidget from './components/HelpChatWidget';
-import AdminDashboard from './components/AdminDashboard';
-import PageTitle from './components/PageTitle';
-import SwipeDiscovery from './components/SwipeDiscovery';
-import DiscoverFeature from './components/DiscoverFeature';
+import { FiMessageCircle, FiShoppingCart, FiMenu, FiX, FiUser, FiLogOut, FiHome, FiPackage, FiMessageSquare, FiSend, FiLock, FiChevronRight, FiPlus, FiPhone, FiMail, FiGlobe, FiLinkedin, FiTwitter, FiInstagram, FiFacebook, FiMap, FiHeart, FiShoppingBag, FiTrash2, FiEdit, FiCheck, FiChevronLeft } from 'react-icons/fi';
+import { PiUserCirclePlus } from "react-icons/pi";
+import { PageTitle } from './components/PageTitle';
+import { LoginPage } from './components/LoginPage';
+import { HomePage } from './components/HomePage';
+import { SwipeDiscovery } from './components/SwipeDiscovery';
+import { AdminDashboard } from './components/AdminDashboard';
+import { HelpChatWidget } from './components/HelpChatWidget';
+import { buildApiUrl, SOCKET_URL } from './config';
 
-// API Base URL Configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
+// Context objects
+const AuthContext = createContext(null);
+const CartContext = createContext(null);
+const MessagesContext = createContext(null);
 
 // Define product categories for consistency
 const PRODUCT_CATEGORIES = [
@@ -29,9 +32,6 @@ const PRODUCT_CATEGORIES = [
   "Clothing & Fashion",
   "School Supplies"
 ];
-
-// Create Auth Context
-const AuthContext = createContext();
 
 export function useAuth() {
   return useContext(AuthContext);
@@ -65,7 +65,7 @@ export function AuthProvider({ children }) {
   // Keeping the old login methods for backward compatibility
   const login = async (usernameOrEmail, password) => {
     try {
-      const response = await axios.post(`${API_BASE_URL}/login`, {
+      const response = await axios.post(`${buildApiUrl()}/login`, {
         usernameOrEmail,
         password
       });
@@ -87,7 +87,7 @@ export function AuthProvider({ children }) {
 
   const register = async (username, email, password) => {
     try {
-      const response = await axios.post(`${API_BASE_URL}/register`, {
+      const response = await axios.post(`${buildApiUrl()}/register`, {
         username,
         email,
         password
@@ -110,17 +110,10 @@ export function AuthProvider({ children }) {
 
   // Method for email verification login
   const verifyEmailLogin = (token, userData) => {
-    // Make sure we store the isAdmin flag in the user data
-    const userWithAdminFlag = {
-      ...userData,
-      isAdmin: userData.isAdmin || ['admin@lionbay.com', 'support@lionbay.com'].includes(userData.email)
-    };
-    
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(userWithAdminFlag));
-    
-    setToken(token);
-    setCurrentUser(userWithAdminFlag);
+    console.log('Setting auth token and user data');
+    localStorage.setItem('authToken', token);
+    setCurrentUser(userData);
+    setIsAuthenticated(true);
   };
 
   const logout = () => {
@@ -151,7 +144,7 @@ export function AuthProvider({ children }) {
 
   // Create axios instance with auth headers
   const authAxios = axios.create({
-    baseURL: API_BASE_URL
+    baseURL: buildApiUrl()
   });
   
   authAxios.interceptors.request.use(
@@ -184,8 +177,6 @@ export function AuthProvider({ children }) {
     </AuthContext.Provider>
   );
 }
-
-const CartContext = createContext();
 
 export function useCart() {
   return useContext(CartContext);
@@ -240,9 +231,6 @@ export function CartProvider({ children }) {
     </CartContext.Provider>
   );
 }
-
-// Create a messages context for unread message count
-const MessagesContext = createContext();
 
 export function useMessages() {
   return useContext(MessagesContext);
@@ -458,7 +446,7 @@ function SignInPage() {
     setError(null);
     
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/verify-email`, { email });
+      const response = await axios.post(`${buildApiUrl()}/auth/verify-email`, { email });
       setCodeSent(true);
       
       // For development, auto-fill the code if returned in response
@@ -484,7 +472,7 @@ function SignInPage() {
     setError(null);
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/verify-code`, {
+      const response = await axios.post(`${buildApiUrl()}/auth/verify-code`, {
         email,
         code: verificationCode
       });
@@ -632,7 +620,7 @@ function MarketPage() {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const response = await axios.get(`${API_BASE_URL}/products`);
+        const response = await axios.get(`${buildApiUrl()}/products`);
         // Sort products by creation date, newest first
         const sortedProducts = response.data.sort((a, b) => 
           new Date(b.created_at) - new Date(a.created_at)
@@ -898,7 +886,7 @@ function ProductDetailPage() {
     const fetchProduct = async () => {
       try {
         console.log(`Fetching product details for ID: ${id}`);
-        const response = await axios.get(`${API_BASE_URL}/products/${id}`);
+        const response = await axios.get(`${buildApiUrl()}/products/${id}`);
         setProduct(response.data);
         console.log("Product data received:", response.data);
       } catch (err) {
@@ -914,106 +902,70 @@ function ProductDetailPage() {
 
   const handleContactSeller = async () => {
     if (!isAuthenticated) {
-      return; // This will be handled by protectedAction
+      navigate('/signin', { state: { from: `/product/${id}` } });
+      return;
     }
 
+    setCreatingChat(true);
     try {
-      // Check if user is trying to contact themselves
-      if (currentUser.userId === product.seller_id) {
-        console.log("User tried to contact themselves");
-        setToastMessage("Cannot contact yourself as the seller.");
-        setToastType("error");
-        setShowToast(true);
-        return;
-      }
+      // Create a chat with the seller
+      const response = await axios.post(
+        buildApiUrl('/chats'),
+        { product_id: id, seller_id: product.seller_id },
+        { headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` } }
+      );
 
-      console.log(`Creating chat for product: ${product.id} with seller: ${product.seller_id}`);
-      
-      // Create or get chat for this product
-      const response = await authAxios.post('/chats', {
-        product_id: product.id,
-        seller_id: product.seller_id
-      });
-      
-      console.log("Chat created/retrieved:", response.data);
-      
-      // Add to cart with CONTACTED type
-      await authAxios.post('/cart', {
-        product_id: product.id,
-        cart_type: 'CONTACTED',
-        chat_id: response.data.id
-      });
-      
+      // Add to cart with CONTACTED status
+      await axios.post(
+        buildApiUrl('/cart'),
+        { 
+          product_id: id, 
+          cart_type: 'CONTACTED',
+          chat_id: response.data.id 
+        },
+        { headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` } }
+      );
+
       // Update cart count
       if (updateCartCount) {
         updateCartCount();
       }
-      
-      // Update unread message count
-      if (updateUnreadCount) {
-        updateUnreadCount();
-      }
-      
-      // Show success toast
-      setToastMessage("Seller contacted successfully.");
-      setToastType("success");
-      setShowToast(true);
-      
-      // Wait a moment before navigating to allow toast to be seen
-      setTimeout(() => {
-      // Navigate to the chat
-      navigate(`/chats/${response.data.id}`);
-      }, 1500);
-      
-    } catch (err) {
-      console.error('Error creating chat:', err.response?.data || err.message);
-      
-      // Check if this is the "cannot chat with yourself" error
-      if (err.response?.data?.error === 'Cannot create chat with yourself') {
-        setToastMessage("Cannot contact yourself as the seller.");
-      } else {
-        setToastMessage(err.response?.data?.error || 'Failed to contact seller. Please try again.');
-      }
-      
-      setToastType("error");
-      setShowToast(true);
+
+      // Redirect to chat
+      navigate(`/chat/${response.data.id}`);
+    } catch (error) {
+      console.error('Error creating chat:', error);
+      toast.error('Failed to contact seller. Please try again.');
+    } finally {
+      setCreatingChat(false);
     }
   };
-  
+
   const handleAddToCart = async () => {
     if (!isAuthenticated) {
-      return; // This will be handled by protectedAction
+      navigate('/signin', { state: { from: `/product/${id}` } });
+      return;
     }
 
+    setAddingToCart(true);
     try {
-      // Check if user is trying to add their own product
-      if (currentUser.userId === product.seller_id) {
-        setToastMessage("Cannot add your own product to cart.");
-        setToastType("error");
-        setShowToast(true);
-        return;
-      }
-
-      // Add to cart with CART_ONLY type
-      await authAxios.post('/cart', {
-        product_id: product.id,
-        cart_type: 'CART_ONLY'
-      });
+      await axios.post(
+        buildApiUrl('/cart'),
+        { product_id: id, cart_type: 'CART_ONLY' },
+        { headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` } }
+      );
       
       // Update cart count
       if (updateCartCount) {
         updateCartCount();
       }
-      
-      // Show success toast
-      setToastMessage("Product added to cart.");
-      setToastType("success");
-      setShowToast(true);
-    } catch (err) {
-      console.error('Error adding to cart:', err.response?.data || err.message);
-      setToastMessage(err.response?.data?.error || 'Failed to add product to cart.');
-      setToastType("error");
-      setShowToast(true);
+
+      toast.success('Product added to cart');
+    } catch (error) {
+      console.error('Error adding to cart:', error);
+      toast.error('Failed to add to cart. Please try again.');
+    } finally {
+      setAddingToCart(false);
     }
   };
 
@@ -2000,125 +1952,55 @@ function SiteFooter() {
 }
 
 function CartPage() {
-  const { authAxios, isAuthenticated, currentUser } = useAuth();
-  const { updateCartCount } = useCart();
-  const { updateUnreadCount } = useMessages();
-  const { protectedAction, renderToast } = useProtectedInteraction();
-  const navigate = useNavigate();
   const [cartItems, setCartItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const [toastType, setToastType] = useState('error');
+  const [error, setError] = useState(null);
+  const { isAuthenticated, currentUser } = useAuth();
+  const navigate = useNavigate();
+  const { updateCartCount } = useCart();
 
   useEffect(() => {
     const fetchCartItems = async () => {
       try {
-        setLoading(true);
-        if (isAuthenticated) {
-          console.log('Fetching cart items for user');
-          const response = await authAxios.get('/cart');
-          console.log('Cart items received:', response.data);
-          setCartItems(response.data);
-        } else {
-          // For non-authenticated users, just set an empty array
-          setCartItems([]);
-        }
-      } catch (err) {
-        console.error('Error fetching cart items:', err.response?.data || err.message);
-        setToastMessage(err.response?.data?.error || 'Failed to load cart items. Please try again.');
-        setToastType('error');
-        setShowToast(true);
-        setCartItems([]); // Reset on error
+        const response = await axios.get(
+          buildApiUrl('/cart'),
+          { headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` } }
+        );
+        setCartItems(response.data);
+      } catch (error) {
+        console.error('Error fetching cart items:', error);
+        setError('Failed to load cart items. Please try again later.');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchCartItems();
-  }, [authAxios, isAuthenticated, navigate]);
+    if (isAuthenticated) {
+      fetchCartItems();
+    } else {
+      setLoading(false);
+    }
+  }, [isAuthenticated]);
 
   const handleRemoveFromCart = async (cartItemId) => {
-    if (!isAuthenticated) return; // Will be handled by protectedAction
-
     try {
-      await authAxios.delete(`/cart/${cartItemId}`);
+      await axios.delete(
+        buildApiUrl(`/cart/${cartItemId}`),
+        { headers: { Authorization: `Bearer ${localStorage.getItem('authToken')}` } }
+      );
       
-      // Update state to remove the item
-      setCartItems(prevItems => prevItems.filter(item => item.id !== cartItemId));
+      // Update cart items list
+      setCartItems(cartItems.filter(item => item.id !== cartItemId));
       
-      // Update cart count
+      // Update cart count in nav
       if (updateCartCount) {
         updateCartCount();
       }
       
-      setToastMessage('Item removed from cart.');
-      setToastType('success');
-      setShowToast(true);
-    } catch (err) {
-      console.error('Error removing from cart:', err.response?.data || err.message);
-      setToastMessage(err.response?.data?.error || 'Failed to remove item from cart.');
-      setToastType('error');
-      setShowToast(true);
-    }
-  };
-
-  const handleContactSeller = async (productId, sellerId) => {
-    if (!isAuthenticated) return; // Will be handled by protectedAction
-
-    try {
-      // Create or get chat for this product
-      const response = await authAxios.post('/chats', {
-        product_id: productId,
-        seller_id: sellerId
-      });
-      
-      console.log("Chat created/retrieved:", response.data);
-      
-      // Update the cart item to CONTACTED type
-      const cartItem = cartItems.find(item => item.product_id === productId);
-      if (cartItem) {
-        await authAxios.put(`/cart/${cartItem.id}`, {
-          cart_type: 'CONTACTED',
-          chat_id: response.data.id
-        });
-        
-        // Update the local state
-        setCartItems(prevItems => 
-          prevItems.map(item => 
-            item.id === cartItem.id
-              ? { ...item, cart_type: 'CONTACTED', chat_id: response.data.id }
-              : item
-          )
-        );
-        
-        // Update cart count (not needed for this operation, but added for consistency)
-        if (updateCartCount) {
-          updateCartCount();
-        }
-      }
-      
-      // Update unread message count
-      if (updateUnreadCount) {
-        updateUnreadCount();
-      }
-      
-      // Show success toast
-      setToastMessage("Seller contacted successfully.");
-      setToastType("success");
-      setShowToast(true);
-      
-      // Wait a moment before navigating to allow toast to be seen
-      setTimeout(() => {
-        // Navigate to the chat
-        navigate(`/chats/${response.data.id}`);
-      }, 1500);
-      
-    } catch (err) {
-      console.error('Error contacting seller:', err.response?.data || err.message);
-      setToastMessage(err.response?.data?.error || 'Failed to contact seller. Please try again.');
-      setToastType('error');
-      setShowToast(true);
+      toast.success('Item removed from cart');
+    } catch (error) {
+      console.error('Error removing from cart:', error);
+      toast.error('Failed to remove item. Please try again.');
     }
   };
 
@@ -2200,12 +2082,6 @@ function CartPage() {
                         <p className="cart-item-condition">Condition: {item.product_condition}</p>
                         <p className="cart-seller">Seller: {item.seller_email}</p>
                         <div className="cart-item-actions">
-                          <button 
-                            onClick={() => protectedAction(() => handleContactSeller(item.product_id, item.seller_id))}
-                            className="contact-seller-button"
-                          >
-                            Contact Seller
-                          </button>
                           <button 
                             onClick={() => protectedAction(() => handleRemoveFromCart(item.id))}
                             className="remove-from-cart-button"
