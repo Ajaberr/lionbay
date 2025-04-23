@@ -24,9 +24,22 @@ npm run build
 # Ensure the build directory exists
 if [ -d "dist" ]; then
   echo "Frontend build created successfully at: $(pwd)/dist"
+  # List files in dist directory
   ls -la dist
+  # Make dist directory accessible for server
+  chmod -R 755 dist
 else
-  echo "WARNING: Frontend build directory not found!"
+  echo "WARNING: Frontend build directory not found! Trying to build again..."
+  # Try a second time with explicit build command
+  npx vite build
+  
+  if [ -d "dist" ]; then
+    echo "Second build attempt succeeded!"
+    ls -la dist
+    chmod -R 755 dist
+  else
+    echo "ERROR: Failed to create dist directory. Check build configuration."
+  fi
 fi
 
 echo "Build completed successfully" 

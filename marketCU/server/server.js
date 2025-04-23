@@ -22,11 +22,28 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Serve static files from dist folder if it exists
-const distPath = path.join(__dirname, '../dist');
-if (fs.existsSync(distPath)) {
-  console.log('Frontend build found. Serving static files from:', distPath);
-  app.use(express.static(distPath));
+// Serve static files from dist folder with multiple possible locations
+const possibleDistPaths = [
+  path.join(__dirname, '../dist'),              // ../dist
+  path.join(__dirname, '../../dist'),           // ../../dist 
+  path.join(__dirname, '../../marketCU/dist'),  // ../../marketCU/dist
+  path.join(process.cwd(), 'dist'),             // cwd/dist
+  path.join(process.cwd(), 'marketCU/dist')     // cwd/marketCU/dist
+];
+
+let distPathFound = false;
+for (const distPath of possibleDistPaths) {
+  if (fs.existsSync(distPath)) {
+    console.log('Frontend build found. Serving static files from:', distPath);
+    app.use(express.static(distPath));
+    distPathFound = true;
+    break;
+  }
+}
+
+if (!distPathFound) {
+  console.log('WARNING: Frontend build not found in any expected location');
+  console.log('Searched in:', possibleDistPaths);
 }
 
 // Initialize PostgreSQL pool for connection management
@@ -1333,12 +1350,47 @@ io.on('connection', (socket) => {
 
 // Catch-all route to serve index.html for client-side routing
 app.get('*', (req, res) => {
-  const distPath = path.join(__dirname, '../dist');
-  if (fs.existsSync(path.join(distPath, 'index.html'))) {
-    res.sendFile(path.join(distPath, 'index.html'));
-  } else {
-    res.status(404).send('Frontend build not found. Please run npm run build first.');
+  // Check multiple possible locations for index.html
+  const possibleIndexPaths = [
+    path.join(__dirname, '../dist/index.html'),
+    path.join(__dirname, '../../dist/index.html'),
+    path.join(__dirname, '../../marketCU/dist/index.html'),
+    path.join(process.cwd(), 'dist/index.html'),
+    path.join(process.cwd(), 'marketCU/dist/index.html')
+  ];
+  
+  // Try each path in order
+  for (const indexPath of possibleIndexPaths) {
+    if (fs.existsSync(indexPath)) {
+      console.log('Serving index.html from:', indexPath);
+      return res.sendFile(indexPath);
+    }
   }
+  
+  // If no index.html found, return debugging info
+  const dirs = [
+    path.join(__dirname, '..'),
+    path.join(__dirname, '../..'),
+    process.cwd()
+  ];
+  
+  const debugInfo = {
+    error: 'Frontend build not found',
+    searchedPaths: possibleIndexPaths,
+    currentDirectory: process.cwd(),
+    directoryContents: {}
+  };
+  
+  // Get directory listings for debugging
+  dirs.forEach(dir => {
+    try {
+      debugInfo.directoryContents[dir] = fs.readdirSync(dir);
+    } catch (err) {
+      debugInfo.directoryContents[dir] = `Error: ${err.message}`;
+    }
+  });
+  
+  res.status(404).json(debugInfo);
 });
 
 // Start the server
