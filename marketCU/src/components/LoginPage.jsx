@@ -30,7 +30,7 @@ function LoginPage({ setIsAuthenticated }) {
       setCodeSent(true);
       setErrorMessage('');
     } catch (error) {
-      setErrorMessage(error.response?.data?.error || 'Failed to send verification code');
+      setErrorMessage(error.response?.data?.message || error.response?.data?.error || 'Failed to send verification code');
     } finally {
       setLoading(false);
     }

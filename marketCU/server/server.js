@@ -1,5 +1,14 @@
-// Load environment variables from .env file
-require('dotenv').config();
+// Load environment variables from .env files
+const path = require('path');
+const dotenv = require('dotenv');
+
+// 1) Load .env in this folder (marketCU/server/.env) if it exists
+dotenv.config({ path: path.join(__dirname, '.env') });
+// 2) Load project-root .env two levels up (../..) without overriding already-set vars
+dotenv.config({ path: path.join(__dirname, '..', '..', '.env'), override: false });
+
+// For backward compatibility, retain default behaviour too (will be a no-op now)
+// require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
@@ -9,9 +18,9 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const { Resend } = require('resend');
 const nodemailer = require('nodemailer');
-const path = require('path');
 const fs = require('fs');
 const { addApiTestEndpoints } = require('./api-test');
+const { cleanupInactiveChats } = require('./chatCleanup');
 
 const app = express();
 const server = http.createServer(app);
@@ -212,6 +221,61 @@ app.post('/api/auth/verify-email', async (req, res) => {
     if (!email.endsWith('@columbia.edu')) {
       return res.status(400).json({ error: 'Only Columbia University emails (@columbia.edu) are allowed' });
     }
+
+    // Check rate limiting
+    const MAX_ATTEMPTS = 5;
+    const RATE_LIMIT_WINDOW = 20; // minutes
+    
+    const attemptResult = await pool.query(
+      'SELECT * FROM verification_attempts WHERE email = $1',
+      [email]
+    );
+    
+    const now = new Date();
+    
+    if (attemptResult.rows.length > 0) {
+      const attempt = attemptResult.rows[0];
+      const resetTime = new Date(attempt.reset_time);
+      
+      // If we're past the reset time, reset the counter
+      if (now > resetTime) {
+        await pool.query(
+          'UPDATE verification_attempts SET attempt_count = 1, last_attempt = NOW(), reset_time = NOW() + INTERVAL \'20 minutes\' WHERE email = $1',
+          [email]
+        );
+      } 
+      // Otherwise, check if they've exceeded the limit
+      else if (attempt.attempt_count >= MAX_ATTEMPTS) {
+        const timeLeft = Math.ceil((resetTime - now) / 60000); // Time left in minutes
+        return res.status(429).json({ 
+          error: 'Too many verification attempts',
+          message: `You have reached the maximum number of verification attempts. Please try again in ${timeLeft} minutes.`,
+          resetTime: resetTime
+        });
+      } 
+      // Increment their attempt count
+      else {
+        await pool.query(
+          'UPDATE verification_attempts SET attempt_count = attempt_count + 1, last_attempt = NOW() WHERE email = $1',
+          [email]
+        );
+      }
+    } else {
+      // First attempt, create a record
+      await pool.query(
+        'INSERT INTO verification_attempts (email, attempt_count, last_attempt, reset_time) VALUES ($1, 1, NOW(), NOW() + INTERVAL \'20 minutes\')',
+        [email]
+      );
+    }
+    
+    // Get the current attempt count after update
+    const currentAttemptResult = await pool.query(
+      'SELECT attempt_count, reset_time FROM verification_attempts WHERE email = $1',
+      [email]
+    );
+    
+    const attemptsLeft = MAX_ATTEMPTS - currentAttemptResult.rows[0].attempt_count;
+    const resetTime = new Date(currentAttemptResult.rows[0].reset_time);
     
     // Create or update user
     try {
@@ -245,7 +309,12 @@ app.post('/api/auth/verify-email', async (req, res) => {
       console.log('Skipping email verification. Code for testing:', verificationCode);
       return res.status(200).json({
         message: 'Verification code ready (email sending skipped)',
-        code: verificationCode
+        code: verificationCode,
+        attempts: {
+          count: currentAttemptResult.rows[0].attempt_count,
+          remaining: attemptsLeft,
+          resetTime: resetTime
+        }
       });
     }
     
@@ -263,14 +332,20 @@ app.post('/api/auth/verify-email', async (req, res) => {
               ${verificationCode}
             </div>
             <p>This code will expire in 15 minutes.</p>
+            <p><small>You have ${attemptsLeft} verification attempts remaining in this 20-minute period.</small></p>
           </div>
         `
       });
       
       console.log('Email sent successfully:', info.messageId);
-    res.status(200).json({ 
-      message: 'Verification code sent to email',
-        code: verificationCode // For development only, remove in production
+      res.status(200).json({ 
+        message: 'Verification code sent to email',
+        code: verificationCode, // For development only, remove in production
+        attempts: {
+          count: currentAttemptResult.rows[0].attempt_count,
+          remaining: attemptsLeft,
+          resetTime: resetTime
+        }
       });
     } catch (emailError) {
       console.error('Email sending error details:', {
@@ -532,6 +607,36 @@ app.put('/api/products/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Delete product
+app.delete('/api/products/:id', authenticateToken, async (req, res) => {
+  try {
+    const productId = req.params.id;
+    
+    // First check if product exists and user is the seller
+    const productCheck = await pool.query(
+      'SELECT seller_id FROM products WHERE id = $1',
+      [productId]
+    );
+    
+    if (productCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+    
+    // Verify user is the seller of the product
+    if (productCheck.rows[0].seller_id !== req.user.userId) {
+      return res.status(403).json({ error: 'Unauthorized: You can only delete your own products' });
+    }
+    
+    // Delete the product
+    await pool.query('DELETE FROM products WHERE id = $1', [productId]);
+    
+    res.json({ success: true, message: 'Product deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting product:', error);
+    res.status(500).json({ error: 'Failed to delete product' });
+  }
+});
+
 // Chat and messages API
 app.post('/api/chats', authenticateToken, async (req, res) => {
   try {
@@ -659,14 +764,23 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
     
     const chatsResult = await pool.query(
       `SELECT c.*, 
-        p.name as product_name, p.image_path as product_image,
-        u1.email as buyer_email, u2.email as seller_email
+        p.name as product_name, p.price as product_price, p.image_path as product_image,
+        u1.email as buyer_email, u2.email as seller_email,
+        (SELECT EXISTS(
+          SELECT 1 FROM messages m 
+          WHERE m.chat_id = c.id 
+            AND m.sender_id != $1 
+            AND m.is_read = false
+        )) as has_unread,
+        (SELECT MAX(created_at) FROM messages WHERE chat_id = c.id) as last_message_at,
+        (SELECT message FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message,
+        (SELECT sender_id FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_sender_id
       FROM chats c
       JOIN products p ON c.product_id = p.id
       JOIN users u1 ON c.buyer_id = u1.id
       JOIN users u2 ON c.seller_id = u2.id
       WHERE c.buyer_id = $1 OR c.seller_id = $1 
-      ORDER BY c.created_at DESC`,
+      ORDER BY last_message_at DESC NULLS LAST, c.created_at DESC`,
       [userId]
     );
     
@@ -746,32 +860,70 @@ app.get('/api/chats/:id/messages', authenticateToken, async (req, res) => {
   }
 });
 
-// Get count of unread messages across all chats
-app.get('/api/chats/unread-count', authenticateToken, async (req, res) => {
+// Check if user has any unread messages
+app.get('/api/chats/has-unread', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
     
-    // We need to add an unread field to messages table first, so we'll simulate this for now
-    // In a real implementation, we would track which messages have been read
-    
-    // For now, we'll count all messages where the user is not the sender
-    // In a real implementation, you would filter by an "is_read" field
-    const unreadCountResult = await pool.query(
-      `SELECT COUNT(*) as count
-      FROM messages m
-      JOIN chats c ON m.chat_id = c.id
-      WHERE (c.buyer_id = $1 OR c.seller_id = $1)
-        AND m.sender_id != $1
-        AND m.created_at > NOW() - INTERVAL '1 day'`, // Only count recent messages as "unread"
+    // Check for messages where user is not the sender and is_read is false
+    const unreadResult = await pool.query(
+      `SELECT EXISTS(
+        SELECT 1
+        FROM messages m
+        JOIN chats c ON m.chat_id = c.id
+        WHERE (c.buyer_id = $1 OR c.seller_id = $1)
+          AND m.sender_id != $1
+          AND m.is_read = false
+      ) as has_unread`,
       [userId]
     );
     
-    res.json({ count: parseInt(unreadCountResult.rows[0].count) });
+    res.json({ hasUnread: unreadResult.rows[0].has_unread });
   } catch (error) {
-    console.error('Error fetching unread message count:', error);
-    res.status(500).json({ error: 'Failed to fetch unread message count' });
+    console.error('Error checking unread messages:', error);
+    res.status(500).json({ error: 'Failed to check unread messages' });
   }
 });
+
+// Mark all messages in a chat as read
+app.post('/api/chats/:id/mark-read', authenticateToken, async (req, res) => {
+  try {
+    const chatId = req.params.id;
+    const userId = req.user.userId;
+    
+    // Verify user has access to chat
+    const chatResult = await pool.query(
+      'SELECT * FROM chats WHERE id = $1',
+      [chatId]
+    );
+    
+    if (chatResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+    
+    const chat = chatResult.rows[0];
+    
+    // Ensure user is authorized to access this chat
+    if (chat.buyer_id !== userId && chat.seller_id !== userId) {
+      return res.status(403).json({ error: 'Unauthorized access to chat' });
+    }
+    
+    // Mark messages from other users as read
+    await pool.query(
+      `UPDATE messages 
+      SET is_read = true 
+      WHERE chat_id = $1 AND sender_id != $2 AND is_read = false`,
+      [chatId, userId]
+    );
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error marking messages as read:', error);
+    res.status(500).json({ error: 'Failed to mark messages as read' });
+  }
+});
+
+// We're removing the unread-count endpoint and implementing it client-side
 
 app.post('/api/chats/:id/messages', authenticateToken, async (req, res) => {
   try {
@@ -796,12 +948,12 @@ app.post('/api/chats/:id/messages', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized to send message' });
     }
     
-    // Create new message
+    // Create new message with is_read = false
     const newMessageResult = await pool.query(
-      `INSERT INTO messages (chat_id, sender_id, message) 
-      VALUES ($1, $2, $3) 
+      `INSERT INTO messages (chat_id, sender_id, message, is_read) 
+      VALUES ($1, $2, $3, $4) 
       RETURNING *`,
-      [chat_id, sender_id, message]
+      [chat_id, sender_id, message, false]
     );
     
     // Get the sender email
@@ -817,6 +969,10 @@ app.post('/api/chats/:id/messages', authenticateToken, async (req, res) => {
     
     // Emit new message event to socket
     io.to(chat_id).emit('new_message', newMessage);
+    
+    // Also emit to the recipient's personal room for unread count
+    const recipientId = chat.buyer_id === sender_id ? chat.seller_id : chat.buyer_id;
+    io.to(recipientId).emit('unread_message', newMessage);
     
     res.status(201).json(newMessage);
   } catch (error) {
@@ -1227,6 +1383,30 @@ app.get('/api/admin/emails', async (req, res) => {
   }
 });
 
+// Add admin endpoint to manually clean up inactive chats
+app.post('/api/admin/cleanup-chats', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    console.log('Admin-triggered chat cleanup started by:', req.user.email);
+    
+    const result = await cleanupInactiveChats();
+    
+    console.log('Admin-triggered chat cleanup complete:', result);
+    
+    res.json({
+      success: true,
+      message: 'Chat cleanup completed successfully',
+      ...result
+    });
+  } catch (error) {
+    console.error('Error in admin chat cleanup:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to clean up chats',
+      message: error.message
+    });
+  }
+});
+
 // Socket.IO authentication middleware
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
@@ -1322,6 +1502,10 @@ io.on('connection', (socket) => {
       // Broadcast the message to all clients in the room
       console.log(`Broadcasting message to room: ${chat_id}`);
       io.to(chat_id).emit('new_message', formattedMessage);
+      
+      // Also emit to the recipient's personal room for unread count
+      const recipientId = chat.buyer_id === socket.user.userId ? chat.seller_id : chat.buyer_id;
+      socket.to(recipientId).emit('unread_message', formattedMessage);
     } catch (error) {
       console.error('Error processing message:', error);
       socket.emit('error', 'Server error processing message');
@@ -1485,6 +1669,44 @@ app.get('*', (req, res) => {
   
   res.status(404).json(debugInfo);
 });
+
+// Schedule daily cleanup of inactive chats (midnight every day)
+const scheduleCleanup = () => {
+  const now = new Date();
+  
+  // Calculate time until midnight
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0);
+  const timeUntilMidnight = midnight.getTime() - now.getTime();
+  
+  console.log(`Scheduling chat cleanup to run in ${Math.round(timeUntilMidnight / 1000 / 60)} minutes`);
+  
+  // Schedule first run
+  setTimeout(async () => {
+    try {
+      console.log('Running scheduled chat cleanup');
+      const result = await cleanupInactiveChats();
+      console.log('Chat cleanup complete:', result);
+      
+      // Schedule next run in 24 hours
+      setInterval(async () => {
+        try {
+          console.log('Running daily chat cleanup');
+          const result = await cleanupInactiveChats();
+          console.log('Chat cleanup complete:', result);
+        } catch (error) {
+          console.error('Error in scheduled chat cleanup:', error);
+        }
+      }, 24 * 60 * 60 * 1000); // 24 hours
+      
+    } catch (error) {
+      console.error('Error in initial chat cleanup:', error);
+    }
+  }, timeUntilMidnight);
+};
+
+// Call the function to schedule cleanup
+scheduleCleanup();
 
 // Start the server
 const PORT = process.env.PORT || 3003;

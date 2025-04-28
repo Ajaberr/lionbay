@@ -1,7 +1,7 @@
 // render-start.js - Smart server starter for Render
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 
 // Get current file path and directory for ES modules
@@ -13,24 +13,23 @@ console.log('Current directory:', process.cwd());
 console.log('Directory contents:');
 
 try {
-  console.log(execSync('ls -la').toString());
-  console.log('\nSearching for server files:');
-  console.log(execSync('find . -name "server.js" -type f').toString());
+  // Use dir for Windows instead of ls
+  console.log(execSync('dir').toString());
 } catch (e) {
   console.log('Error listing directory:', e.message);
 }
 
-// Possible server file locations
+// Instead of trying to import the server file directly (which causes ESM/CommonJS issues),
+// we'll spawn a new Node process to run it
 const serverPaths = [
   './server/server.js',
-  './marketCU/server/server.js',
+  '../server/server.js',  // Try relative to this file
   './server.js',
   './index.js',
-  './server/index.js',
-  './marketCU/server.js'
+  './server/index.js'
 ];
 
-// Try to find and require the server file
+// Try to find and run the server file with a child process
 let serverStarted = false;
 
 for (const serverPath of serverPaths) {
@@ -38,11 +37,21 @@ for (const serverPath of serverPaths) {
   console.log(`Checking ${fullPath}`);
   
   if (fs.existsSync(fullPath)) {
-    console.log(`Found server at ${fullPath}, starting...`);
+    console.log(`Found server at ${fullPath}, starting with Node...`);
     try {
-      // Use dynamic import instead of require
-      const module = await import(fullPath);
+      // Instead of importing directly, spawn a new Node process
+      const server = spawn('node', [fullPath], { 
+        stdio: 'inherit',  // Forward all stdio to parent process
+        cwd: process.cwd() // Use same working directory
+      });
+      
+      server.on('error', (err) => {
+        console.error(`Failed to start server process: ${err.message}`);
+      });
+      
+      // Don't exit this process
       serverStarted = true;
+      console.log(`Server process started with PID: ${server.pid}`);
       break;
     } catch (err) {
       console.error(`Error starting server from ${fullPath}:`, err.message);
@@ -56,3 +65,6 @@ if (!serverStarted) {
   console.error('CRITICAL: Could not find any server file to start!');
   process.exit(1);
 }
+
+// Keep parent process running
+process.stdin.resume();

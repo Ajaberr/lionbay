@@ -249,59 +249,64 @@ export function useMessages() {
 }
 
 export function MessagesProvider({ children }) {
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [hasUnread, setHasUnread] = useState(false);
   const { authAxios, isAuthenticated } = useAuth();
   
-  const updateUnreadCount = async () => {
+  const checkUnreadMessages = async () => {
     if (!isAuthenticated) return;
     
     try {
-      // Use the full API URL instead of relative path
-      const response = await fetch('http://localhost:3001/api/chats/unread-count', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
+      const response = await authAxios.get('/chats/has-unread');
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      console.log("Unread message count received:", data);
-      
-      if (data && data.count !== undefined) {
-        setUnreadCount(data.count);
+      if (response.data && response.data.hasUnread !== undefined) {
+        setHasUnread(response.data.hasUnread);
       }
     } catch (error) {
-      console.error('Error fetching unread message count:', error);
+      console.error('Error checking unread messages:', error);
     }
+  };
+
+  const markAllAsRead = async (chatId) => {
+    if (!isAuthenticated) return;
+    
+    try {
+      await authAxios.post(`/chats/${chatId}/mark-read`);
+      setHasUnread(false);
+    } catch (error) {
+      console.error('Error marking messages as read:', error);
+    }
+  };
+  
+  // New function to indicate new unread messages
+  const setHasUnreadMessages = (value = true) => {
+    setHasUnread(value);
   };
   
   useEffect(() => {
     if (isAuthenticated) {
-      updateUnreadCount();
+      checkUnreadMessages();
       
-      // Set up polling to update unread count
-      const interval = setInterval(updateUnreadCount, 15000); // Every 15 seconds
+      // Set up polling to check for unread messages
+      const interval = setInterval(checkUnreadMessages, 15000); // Every 15 seconds
       
       return () => clearInterval(interval);
     } else {
-      setUnreadCount(0); // Reset count when logged out
+      setHasUnread(false); // Reset when logged out
     }
   }, [isAuthenticated]);
   
   return (
-    <MessagesContext.Provider value={{ unreadCount, updateUnreadCount }}>
+    <MessagesContext.Provider value={{ hasUnread, markAllAsRead, setHasUnreadMessages }}>
       {children}
     </MessagesContext.Provider>
   );
 }
 
 function MessageCount() {
-  const { unreadCount } = useMessages();
+  const { hasUnread } = useMessages();
   
-  return unreadCount || 0;
+  // Return a dot indicator when there are unread messages
+  return hasUnread ? '•' : '';
 }
 
 function CartCount() {
@@ -1106,7 +1111,8 @@ function CreateProductPage() {
     condition: 'New',
     price: '',
     category: '',
-    image_path: ''
+    image_path: '',
+    other_category: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [imageError, setImageError] = useState('');
@@ -1122,8 +1128,40 @@ function CreateProductPage() {
     try {
       const response = await fetch(url);
       const contentType = response.headers.get('content-type');
-      return contentType.startsWith('image/');
+      
+      // Check if it's an image
+      if (!contentType.startsWith('image/')) {
+        return false;
+      }
+
+      // Check content length (max 5MB)
+      const contentLength = response.headers.get('content-length');
+      if (contentLength && parseInt(contentLength) > 5 * 1024 * 1024) {
+        setImageError('Image size must be less than 5MB');
+        return false;
+      }
+
+      // Create an image object to check dimensions
+      const img = new Image();
+      return new Promise((resolve) => {
+        img.onload = () => {
+          const maxWidth = 2000;
+          const maxHeight = 2000;
+          if (img.width > maxWidth || img.height > maxHeight) {
+            setImageError(`Image dimensions must be less than ${maxWidth}x${maxHeight} pixels`);
+            resolve(false);
+          } else {
+            resolve(true);
+          }
+        };
+        img.onerror = () => {
+          setImageError('Failed to load image. Please try another URL.');
+          resolve(false);
+        };
+        img.src = url;
+      });
     } catch {
+      setImageError('Invalid image URL or failed to load image');
       return false;
     }
   };
@@ -1149,22 +1187,47 @@ function CreateProductPage() {
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
+      // Check file type
       if (!file.type.startsWith('image/')) {
-        setImageError('Please upload a valid image file');
+        setImageError('Please upload a valid image file (JPEG, PNG, or GIF)');
         return;
       }
-      
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const base64Image = event.target.result;
-        setPreviewImage(base64Image);
-        setFormData({
-          ...formData,
-          image_path: base64Image
-        });
-        setImageError('');
+
+      // Check file size (max 5MB)
+      const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+      if (file.size > maxSize) {
+        setImageError('Image size must be less than 5MB');
+        return;
+      }
+
+      // Create an image object to check dimensions
+      const img = new Image();
+      img.onload = () => {
+        // Check image dimensions
+        const maxWidth = 2000;
+        const maxHeight = 2000;
+        if (img.width > maxWidth || img.height > maxHeight) {
+          setImageError(`Image dimensions must be less than ${maxWidth}x${maxHeight} pixels`);
+          return;
+        }
+
+        // If all checks pass, proceed with the upload
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const base64Image = event.target.result;
+          setPreviewImage(base64Image);
+          setFormData({
+            ...formData,
+            image_path: base64Image
+          });
+          setImageError('');
+        };
+        reader.readAsDataURL(file);
       };
-      reader.readAsDataURL(file);
+      img.onerror = () => {
+        setImageError('Failed to load image. Please try another file.');
+      };
+      img.src = URL.createObjectURL(file);
     }
   };
 
@@ -1420,10 +1483,14 @@ function ChatsListPage() {
     <div className="chats-list-page">
       <div className="chats-header">
       <h1>Messages</h1>
-        <p className="role-legend">
-          <span className="legend-item"><span className="role-dot seller"></span> You are selling</span>
-          <span className="legend-item"><span className="role-dot buyer"></span> You are buying</span>
-        </p>
+        <div className="role-legend">
+          <div className="legend-item"><span className="role-dot seller"></span> You are selling</div>
+          <div className="legend-item"><span className="role-dot buyer"></span> You are buying</div>
+        </div>
+        <div className="expiration-notice">
+          <i className="fas fa-info-circle"></i>
+          <span>Chats automatically expire after 7 days of inactivity</span>
+        </div>
       </div>
       
       {chats.length === 0 ? (
@@ -1458,6 +1525,20 @@ function ChatsListPage() {
                       ? `Buyer: ${chat.buyer_email}` 
                       : `Seller: ${chat.seller_email}`}
                 </p>
+                {chat.last_message && (
+                  <p className="chat-last-message">
+                    <span className="message-sender">
+                      {chat.last_message_sender_id === currentUser.userId 
+                        ? 'You: ' 
+                        : chat.last_message_sender_id === chat.seller_id 
+                          ? 'Seller: ' 
+                          : 'Buyer: '}
+                    </span>
+                    {chat.last_message.length > 40 
+                      ? chat.last_message.substring(0, 40) + '...' 
+                      : chat.last_message}
+                  </p>
+                )}
               </div>
             </Link>
             );
@@ -1479,6 +1560,7 @@ function ChatsListPage() {
 function ChatPage() {
   const { id } = useParams();
   const { authAxios, currentUser, isAuthenticated } = useAuth();
+  const { markAllAsRead } = useMessages();
   const navigate = useNavigate();
   const [chat, setChat] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -1497,7 +1579,15 @@ function ChatPage() {
     console.log("Current user:", currentUser);
   }, [currentUser]);
 
-  // Initialize socket connection
+  // Add a separate effect just for marking messages as read
+  useEffect(() => {
+    if (isAuthenticated && id) {
+      // Mark messages as read when the chat is opened
+      markAllAsRead(id);
+    }
+  }, [isAuthenticated, id, markAllAsRead]);
+
+  // Initialize socket connection and fetch chat data
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/');
@@ -1644,7 +1734,8 @@ function ChatPage() {
       message: messageText,
       created_at: new Date().toISOString(),
       sender_email: currentUser.email,
-      temporary: true
+      temporary: true,
+      is_read: false
     };
     
     // Add to state with immutable update pattern
@@ -1653,7 +1744,7 @@ function ChatPage() {
     try {
       let finalMessageId = tempId;
       
-      // Always use REST API for reliable message persistence
+      // Make sure we're using the correct API URL
       console.log('Sending via REST API');
       const response = await authAxios.post(`/chats/${id}/messages`, {
         message: messageText
@@ -1666,17 +1757,8 @@ function ChatPage() {
       setMessages(prev => prev.map(msg => 
         msg.id === tempId ? {...response.data, id: response.data.id} : msg
       ));
-      
-      // Also send through socket for real-time delivery to other users if connected
-      if (socket && socketConnected) {
-        console.log('Also notifying via socket');
-        socket.emit('new_message_notification', {
-          chat_id: id,
-          message_id: finalMessageId
-        });
-      }
     } catch (err) {
-      console.error('Error sending message:', err.response?.data || err.message);
+      console.error('Error sending message:', err);
       
       // Remove optimistic message on failure
       setMessages(prev => prev.filter(msg => msg.id !== tempId));
@@ -1733,6 +1815,17 @@ function ChatPage() {
     return message.sender_id === currentUser.userId;
   };
 
+  // Add this function to determine message styling
+  const getMessageClassName = (message) => {
+    const baseClass = isMessageFromCurrentUser(message) 
+      ? "message sent" 
+      : "message received";
+    
+    return message.is_read === false && !isMessageFromCurrentUser(message)
+      ? `${baseClass} unread` 
+      : baseClass;
+  };
+
   if (loading) return (
     <div className="chat-page">
       <div className="loading">Loading chat...</div>
@@ -1756,69 +1849,33 @@ function ChatPage() {
           <div className="role-indicator">
             <span className={`role-badge ${currentUser.userId === chat?.seller_id ? 'seller' : 'buyer'}`}>
               {currentUser.userId === chat?.seller_id ? 'SELLING' : 'BUYING'}
-            </span>
+                    </span>
           </div>
         </div>
         
-        <div className="messages-container">
+        <div className="messages-container" ref={messagesEndRef}>
           {messages.length === 0 ? (
             <div className="no-messages">
               <p>No messages yet. Start the conversation!</p>
             </div>
           ) : (
             <>
-              {messages.map((message, index) => {
-                // Skip rendering invalid messages
-                if (!message || !message.id) {
-                  console.warn('Skipping invalid message:', message);
-                  return null;
-                }
-                
-                try {
-                  // Determine if this is the first message of the day
-                  const showDate = index === 0 || 
-                    new Date(message.created_at).toDateString() !== 
-                    new Date(messages[index - 1].created_at).toDateString();
-                  
-                  // Determine if message is from current user
-                  const isFromCurrentUser = isMessageFromCurrentUser(message);
-                  
-                  // Determine if the previous message was from the same sender
-                  const sameSenderAsPrevious = index > 0 && 
-                    message.sender_id === messages[index - 1].sender_id;
-                  
-                  return (
-                    <Fragment key={message.id}>
-                      {showDate && (
-                        <div className="message-date-separator">
-                          <span>{new Date(message.created_at).toLocaleDateString([], {
-                            weekday: 'long',
-                            month: 'long',
-                            day: 'numeric'
-                          })}</span>
-                        </div>
-                      )}
-                      <div 
-                        className={`message ${isFromCurrentUser ? 'sent' : 'received'} ${sameSenderAsPrevious ? 'grouped' : ''} ${message.temporary ? 'pending' : ''}`}
-                      >
-                        <div className="message-content">
-                          <p>{message.message}</p>
-                          <span className="message-time">
-                            {formatMessageTime(message.created_at)}
-                            {message.temporary && <span className="message-status">Sending...</span>}
-                          </span>
-                        </div>
-                      </div>
-                    </Fragment>
-                  );
-                } catch (err) {
-                  console.error('Error rendering message:', err, message);
-                  return null;
-                }
-              })}
+              {messages.map((message) => (
+                <div
+                  key={message.id || `temp-${message.tempId}`}
+                  className={getMessageClassName(message)}
+                >
+                  <div className="message-content">
+                    <p>{message.message}</p>
+                    <span className="message-time">
+                      {formatMessageTime(message.created_at)}
+                      {message.temporary && <span className="message-status">Sending...</span>}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </>
           )}
-          <div ref={messagesEndRef} className="messages-end-ref" />
         </div>
         
         <form onSubmit={handleSendMessage} className="message-form">
@@ -1883,7 +1940,36 @@ function App() {
 
 function AppContent() {
   const { isAuthenticated, currentUser } = useAuth();
+  const { setHasUnreadMessages } = useMessages();
   const [toast, setToast] = useState(null);
+  const [globalSocket, setGlobalSocket] = useState(null);
+  
+  // Set up global socket connection for unread messages
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return;
+    
+    console.log('Setting up global socket connection for unread messages');
+    const token = localStorage.getItem('token');
+    const newSocket = io(SOCKET_URL, {
+      auth: { token }
+    });
+    
+    newSocket.on('connect', () => {
+      console.log('Socket connected for unread message notifications');
+    });
+    
+    // Listen for unread messages
+    newSocket.on('unread_message', (message) => {
+      console.log('Received unread message notification');
+      setHasUnreadMessages(true);
+    });
+    
+    setGlobalSocket(newSocket);
+    
+    return () => {
+      if (newSocket) newSocket.disconnect();
+    };
+  }, [isAuthenticated, currentUser, setHasUnreadMessages]);
   
   return (
     <>
@@ -1939,6 +2025,8 @@ function AppContent() {
             <ProfilePage />
           </GrayscalePreview>
         } /> */}
+        {/* Catch-all route for non-existent paths */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <SiteFooter />
       <HelpChatWidget />
@@ -1951,49 +2039,8 @@ function AppContent() {
 function SiteFooter() {
   return (
     <footer className="site-footer">
-      <div className="footer-container">
-        <div className="footer-section">
-          <h3>Lion Bay</h3>
-          <p>The marketplace where you can actually get stuff before the semester ends. You heard!</p>
-        </div>
-        
-        <div className="footer-section">
-          <h3>Quick Links</h3>
-          <ul>
-            <li><Link to="/home">Home</Link></li>
-            <li><Link to="/market">Explore Stuff</Link></li>
-            <li><Link to="/create-product">Sell Your Stuff</Link></li>
-          </ul>
-        </div>
-        
-        <div className="footer-section">
-          <h3>Find Your Way</h3>
-          <div className="site-map">
-            <div className="site-map-item">
-              <span className="site-map-icon"><i className="fas fa-home"></i></span>
-              <Link to="/home">Home</Link>
-            </div>
-            <div className="site-map-item">
-              <span className="site-map-icon"><i className="fas fa-shopping-cart"></i></span>
-              <Link to="/market">Find Things</Link>
-            </div>
-            <div className="site-map-item">
-              <span className="site-map-icon"><i className="fas fa-plus"></i></span>
-              <Link to="/create-product">Sell Things</Link>
-            </div>
-            <div className="site-map-item">
-              <span className="site-map-icon"><i className="fas fa-comment"></i></span>
-              <Link to="/chats">Slide in DMs</Link>
-            </div>
-            <div className="site-map-item">
-              <span className="site-map-icon"><i className="fas fa-user"></i></span>
-              <span className="coming-soon">Profile <span className="coming-soon-badge">Coming Soon</span></span>
-            </div>
-          </div>
-        </div>
-      </div>
       <div className="footer-bottom">
-        <p>&copy; {new Date().getFullYear()} Lion Bay. Better, faster, closer than those other guys.</p>
+        <p>&copy; {new Date().getFullYear()} Lion Bay</p>
       </div>
     </footer>
   );
@@ -2260,12 +2307,12 @@ function ProductManagementPage() {
     condition: 'New',
     price: '',
     category: '',
-    image_paths: [''],
+    image_path: '',
     other_category: ''
   });
   const [formErrors, setFormErrors] = useState({});
-  const [imageFiles, setImageFiles] = useState([null, null, null, null]);
-  const [previewImages, setPreviewImages] = useState(['', '', '', '']);
+  const [imageFile, setImageFile] = useState(null);
+  const [previewImage, setPreviewImage] = useState('');
   const [uploadMethod, setUploadMethod] = useState('file');
 
   const categories = [
@@ -2331,37 +2378,69 @@ function ProductManagementPage() {
     if (!formData.name.trim()) {
       errors.name = "Product name is required";
       hasError = true;
-    }
-
-    if (!formData.price || formData.price <= 0) {
-      errors.price = "Valid price is required";
+    } else if (formData.name.length < 3) {
+      errors.name = "Product name must be at least 3 characters long";
+      hasError = true;
+    } else if (formData.name.length > 100) {
+      errors.name = "Product name must be less than 100 characters";
       hasError = true;
     }
 
+    // Price validation
+    if (!formData.price) {
+      errors.price = "Price is required";
+      hasError = true;
+    } else if (isNaN(formData.price) || formData.price <= 0) {
+      errors.price = "Price must be a positive number";
+      hasError = true;
+    } else if (formData.price > 1000000) {
+      errors.price = "Price must be less than $1,000,000";
+      hasError = true;
+    }
+
+    // Condition validation
     if (!formData.condition) {
       errors.condition = "Condition is required";
       hasError = true;
     }
 
+    // Category validation
     if (!formData.category) {
       errors.category = "Category is required";
       hasError = true;
-    }
-
-    if (formData.category === 'Other' && !formData.other_category.trim()) {
-      errors.other_category = "Please specify a category";
+    } else if (formData.category === 'Other' && !formData.other_category?.trim()) {
+      errors.other_category = "Please specify a custom category";
       hasError = true;
     }
 
-    // Check if at least one image is provided
-    const hasImage = formData.image_paths.some(path => path.trim() !== '') || 
-                    imageFiles.some(file => file !== null);
-    
-    if (!hasImage) {
-      errors.images = "At least one image is required";
+    // Details validation
+    if (!formData.details.trim()) {
+      errors.details = "Product details are required";
+      hasError = true;
+    } else if (formData.details.length < 10) {
+      errors.details = "Product details must be at least 10 characters long";
+      hasError = true;
+    } else if (formData.details.length > 2000) {
+      errors.details = "Product details must be less than 2000 characters";
       hasError = true;
     }
 
+    // Image validation
+    if (!formData.image_path) {
+      errors.images = "At least one product image is required";
+      hasError = true;
+    } else {
+      // Validate image URLs if using URL method
+      if (uploadMethod === 'url') {
+        const invalidUrls = [formData.image_path].filter(url => url && !url.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i));
+        if (invalidUrls.length > 0) {
+          errors.images = "Please provide valid image URLs (jpg, jpeg, png, gif, or webp)";
+          hasError = true;
+        }
+      }
+    }
+
+    // Set form errors
     setFormErrors(errors);
     return !hasError;
   };
@@ -2390,20 +2469,15 @@ function ProductManagementPage() {
     }
   };
 
-  const handleImageUrlChange = (index, value) => {
-    const newImagePaths = [...formData.image_paths];
-    newImagePaths[index] = value;
-    
+  const handleImageUrlChange = (value) => {
     setFormData({
       ...formData,
-      image_paths: newImagePaths
+      image_path: value
     });
     
     // Update preview for URL method
     if (uploadMethod === 'url') {
-      const newPreviews = [...previewImages];
-      newPreviews[index] = value;
-      setPreviewImages(newPreviews);
+      setPreviewImage(value);
     }
     
     // Clear error when image is updated
@@ -2415,38 +2489,32 @@ function ProductManagementPage() {
     }
   };
 
-  const handleFileUpload = (index, e) => {
+  const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
         setFormErrors({
           ...formErrors,
-          images: `File ${index + 1} is not a valid image`
+          images: 'Please upload a valid image file'
         });
         return;
       }
       
       // Update file state
-      const newImageFiles = [...imageFiles];
-      newImageFiles[index] = file;
-      setImageFiles(newImageFiles);
+      setImageFile(file);
       
       // Create preview
       const reader = new FileReader();
       reader.onload = (event) => {
         const base64Image = event.target.result;
         
-        // Update preview images
-        const newPreviews = [...previewImages];
-        newPreviews[index] = base64Image;
-        setPreviewImages(newPreviews);
+        // Update preview image
+        setPreviewImage(base64Image);
         
-        // Also update image paths for form data
-        const newImagePaths = [...formData.image_paths];
-        newImagePaths[index] = base64Image;
+        // Also update image path for form data
         setFormData({
           ...formData,
-          image_paths: newImagePaths
+          image_path: base64Image
         });
       };
       reader.readAsDataURL(file);
@@ -2469,13 +2537,13 @@ function ProductManagementPage() {
       condition: product.condition,
       price: product.price,
       category: product.category,
-      image_paths: [product.image_path, '', '', ''], // Set first image, others blank
+      image_path: product.image_path,
       other_category: product.category === 'Other' ? product.custom_category || '' : ''
     });
     
-    // Reset previews
-    setPreviewImages([product.image_path, '', '', '']);
-    setImageFiles([null, null, null, null]);
+    // Reset preview
+    setPreviewImage(product.image_path);
+    setImageFile(null);
     setFormErrors({});
     setShowEditForm(true);
     setShowAddForm(false);
@@ -2489,11 +2557,11 @@ function ProductManagementPage() {
       condition: 'New',
       price: '',
       category: '',
-      image_paths: ['', '', '', ''],
+      image_path: '',
       other_category: ''
     });
-    setPreviewImages(['', '', '', '']);
-    setImageFiles([null, null, null, null]);
+    setPreviewImage('');
+    setImageFile(null);
     setFormErrors({});
     setShowAddForm(true);
     setShowEditForm(false);
@@ -2521,7 +2589,7 @@ function ProductManagementPage() {
         condition: formData.condition,
         price: formData.price,
         category: finalCategory,
-        image_paths: formData.image_paths.filter(path => path.trim() !== '')
+        image_path: formData.image_path
       };
       
       let response;
@@ -2591,6 +2659,8 @@ function ProductManagementPage() {
       <div className="product-management-container">
         <div className="page-header">
           <h1>Manage Your Products</h1>
+        </div>
+        <div className="page-actions">
           <button 
             className="add-product-button" 
             onClick={handleAddNewProduct}
@@ -2700,7 +2770,7 @@ function ProductManagementPage() {
               </div>
               
               <div className="form-group">
-                <label>Product Images* (Upload up to 4 images)</label>
+                <label>Product Image*</label>
                 
                 <div className="upload-options">
                   <button 
@@ -2708,54 +2778,50 @@ function ProductManagementPage() {
                     className={`upload-option-btn ${uploadMethod === 'url' ? 'active' : ''}`}
                     onClick={() => setUploadMethod('url')}
                   >
-                    Use URLs
+                    Use URL
                   </button>
                   <button 
                     type="button" 
                     className={`upload-option-btn ${uploadMethod === 'file' ? 'active' : ''}`}
                     onClick={() => setUploadMethod('file')}
                   >
-                    Upload Files
+                    Upload File
                   </button>
                 </div>
                 
-                <div className="product-images-container">
-                  {[0, 1, 2, 3].map((index) => (
-                    <div key={index} className="product-image-item">
-                      {uploadMethod === 'url' ? (
-                        <input
-                          type="text"
-                          placeholder={`Image URL ${index + 1}${index === 0 ? ' (Primary)' : ''}`}
-                          value={formData.image_paths[index] || ''}
-                          onChange={(e) => handleImageUrlChange(index, e.target.value)}
-                          className={formErrors.images && index === 0 ? 'error-border' : ''}
-                        />
-                      ) : (
-                        <div className="file-upload-container">
-                          <input
-                            type="file"
-                            id={`image_file_${index}`}
-                            accept="image/*"
-                            onChange={(e) => handleFileUpload(index, e)}
-                            className="file-upload-input"
-                          />
-                          <label htmlFor={`image_file_${index}`} className={`file-upload-label ${formErrors.images && index === 0 ? 'error-border' : ''}`}>
-                            {imageFiles[index] ? imageFiles[index].name : `Choose image ${index + 1}${index === 0 ? ' (Primary)' : ''}`}
-                          </label>
-                        </div>
-                      )}
-                      
-                      {previewImages[index] ? (
-                        <div className="image-preview">
-                          <img src={previewImages[index]} alt={`Product preview ${index + 1}`} />
-                        </div>
-                      ) : (
-                        <div className="image-preview empty">
-                          <span>No preview</span>
-                        </div>
-                      )}
+                <div className="product-image-container">
+                  {uploadMethod === 'url' ? (
+                    <input
+                      type="text"
+                      placeholder="Image URL"
+                      value={formData.image_path || ''}
+                      onChange={(e) => handleImageUrlChange(e.target.value)}
+                      className={formErrors.images ? 'error-border' : ''}
+                    />
+                  ) : (
+                    <div className="file-upload-container">
+                      <input
+                        type="file"
+                        id="image_file"
+                        accept="image/*"
+                        onChange={handleFileUpload}
+                        className="file-upload-input"
+                      />
+                      <label htmlFor="image_file" className={`file-upload-label ${formErrors.images ? 'error-border' : ''}`}>
+                        {imageFile ? imageFile.name : 'Choose image'}
+                      </label>
                     </div>
-                  ))}
+                  )}
+                  
+                  {previewImage ? (
+                    <div className="image-preview">
+                      <img src={previewImage} alt="Product preview" />
+                    </div>
+                  ) : (
+                    <div className="image-preview empty">
+                      <span>No preview</span>
+                    </div>
+                  )}
                 </div>
                 
                 {formErrors.images && <div className="form-error">{formErrors.images}</div>}
@@ -2822,8 +2888,8 @@ function ProductManagementPage() {
                   </div>
                 </div>
               ))
-            )}
-          </div>
+                )}
+              </div>
         )}
       </div>
       
@@ -2882,7 +2948,7 @@ function MobileSidebar({ isOpen, onClose, isAuthenticated, isVerified, onLogout 
           <Link to="/" className="logo-container" onClick={onClose}>
             <img src={logo} alt="Lion Bay" className="logo" />
             <span className="logo-text">LionBay</span>
-          </Link>
+            </Link>
           <button className="close-sidebar" onClick={onClose}>
             <i className="fas fa-times"></i>
           </button>
@@ -3271,8 +3337,8 @@ function ProfilePage() {
               <strong>Complete your profile to verify your Columbia student status.</strong>
               <p>Verification is required to contact sellers, access chats, and sell items.</p>
             </div>
-          </div>
-        )}
+        </div>
+      )}
         
         <div className="profile-content">
           <div className="profile-sidebar">

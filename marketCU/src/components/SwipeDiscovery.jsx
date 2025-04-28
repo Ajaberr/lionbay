@@ -13,8 +13,19 @@ const SwipeDiscovery = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [swipedRight, setSwipedRight] = useState([]);
-  const [swipedLeft, setSwipedLeft] = useState([]);
+  const [swipedRight, setSwipedRight] = useState(() => {
+    const saved = localStorage.getItem('swipedRight');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [swipedLeft, setSwipedLeft] = useState(() => {
+    const saved = localStorage.getItem('swipedLeft');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [userPreferences, setUserPreferences] = useState({
+    categories: {},
+    priceRange: [0, Infinity],
+    conditions: {}
+  });
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('');
@@ -36,190 +47,301 @@ const SwipeDiscovery = () => {
   const [confetti, setConfetti] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
 
+  // New state for swipe tracking
+  const [isSwiping, setIsSwiping] = useState(false);
+  const swipeTimeoutRef = useRef(null);
+
+  const [isFetching, setIsFetching] = useState(false);
+
   // Load products on component mount
   useEffect(() => {
     fetchProducts();
   }, []);
 
-  // Check if we need to load more products when running low
+  // Only handle image preloading
   useEffect(() => {
-    if (!loading && products.length > 0 && currentIndex >= products.length - 2) {
-      // Instead of recommendations, just fetch more products
-      console.log("Running low on products, fetching more...");
-      fetchProducts();
-    }
-    
-    // Preload the next few images
     if (products.length > 0) {
       preloadImages();
     }
-  }, [currentIndex, products, loading]);
+  }, [currentIndex, products]);
 
-  const fetchProducts = async () => {
+  // Update user preferences based on swipes
+  const updateUserPreferences = (product, direction) => {
+    setUserPreferences(prev => {
+      const newPreferences = { ...prev };
+      
+      // Update category preferences
+      if (!newPreferences.categories[product.category]) {
+        newPreferences.categories[product.category] = { likes: 0, dislikes: 0 };
+      }
+      if (direction === 'right') {
+        newPreferences.categories[product.category].likes += 1;
+      } else {
+        newPreferences.categories[product.category].dislikes += 1;
+      }
+      
+      // Update price range preferences
+      if (direction === 'right') {
+        const currentMin = newPreferences.priceRange[0];
+        const currentMax = newPreferences.priceRange[1];
+        newPreferences.priceRange = [
+          Math.min(currentMin, product.price),
+          Math.max(currentMax, product.price)
+        ];
+      }
+      
+      // Update condition preferences
+      if (!newPreferences.conditions[product.condition]) {
+        newPreferences.conditions[product.condition] = { likes: 0, dislikes: 0 };
+      }
+      if (direction === 'right') {
+        newPreferences.conditions[product.condition].likes += 1;
+      } else {
+        newPreferences.conditions[product.condition].dislikes += 1;
+      }
+      
+      return newPreferences;
+    });
+  };
+
+  // Score a product based on user preferences
+  const scoreProduct = (product) => {
+    let score = 0;
+    
+    // Category score
+    const categoryPref = userPreferences.categories[product.category];
+    if (categoryPref) {
+      const totalSwipes = categoryPref.likes + categoryPref.dislikes;
+      if (totalSwipes > 0) {
+        score += (categoryPref.likes / totalSwipes) * 40; // Category contributes 40% to score
+      }
+    }
+    
+    // Price score
+    const [minPrice, maxPrice] = userPreferences.priceRange;
+    if (minPrice !== 0 && maxPrice !== Infinity) {
+      const priceRange = maxPrice - minPrice;
+      const pricePosition = (product.price - minPrice) / priceRange;
+      // Prefer prices in the middle of the range
+      score += (1 - Math.abs(pricePosition - 0.5)) * 30; // Price contributes 30% to score
+    }
+    
+    // Condition score
+    const conditionPref = userPreferences.conditions[product.condition];
+    if (conditionPref) {
+      const totalSwipes = conditionPref.likes + conditionPref.dislikes;
+      if (totalSwipes > 0) {
+        score += (conditionPref.likes / totalSwipes) * 30; // Condition contributes 30% to score
+      }
+    }
+    
+    return score;
+  };
+
+  // Sort products based on recommendation score
+  const sortProductsByRecommendation = (products) => {
+    return [...products].sort((a, b) => {
+      const scoreA = scoreProduct(a);
+      const scoreB = scoreProduct(b);
+      return scoreB - scoreA; // Sort in descending order
+    });
+  };
+
+  const getProductImageUrl = (product) => {
+    if (!product || !product.image_path) {
+      return "/api/placeholder/300/300";
+    }
+    return product.image_path;
+  };
+
+  const fetchProducts = async (isRefresh = false) => {
+    if (isFetching) return;
+    
     try {
+      setIsFetching(true);
       setError(null);
       setLoading(true);
       
-      console.log("Attempting to fetch products...");
-      console.log("Auth token:", localStorage.getItem('token') ? "Token exists" : "No token found");
-      
-      // Use the full API URL instead of relative path
       const apiUrl = 'http://localhost:3001/api/products';
-      console.log("Fetching from:", apiUrl);
-      
       const response = await fetch(apiUrl, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
-      
-      console.log("Response status:", response.status);
       
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
       
       const data = await response.json();
-      console.log("Products fetched:", data.length);
-      console.log("Sample product:", data.length > 0 ? JSON.stringify(data[0]) : "No products");
       
       if (!data || data.length === 0) {
         setError("No products available at the moment. Please check back later.");
         setLoading(false);
+        setIsFetching(false);
         return;
       }
       
-      // Simple filtering - just exclude products already swiped
+      // Filter out swiped products and user's own products
       const filteredProducts = data.filter(product => 
         !swipedRight.includes(product.id) && 
         !swipedLeft.includes(product.id) &&
-        // If user is logged in, exclude their own products
         (!currentUser || product.seller_id !== currentUser.userId)
       );
       
-      console.log("Filtered products:", filteredProducts.length);
-      
       if (filteredProducts.length === 0) {
         setError("You've already viewed all available products. Check back later for new listings!");
-      } else {
-        // Add to existing products rather than replacing
-        setProducts(prevProducts => {
-          // Combine previous and new products, removing duplicates
-          const combinedProducts = [...prevProducts];
-          
-          filteredProducts.forEach(newProduct => {
-            if (!combinedProducts.some(p => p.id === newProduct.id)) {
-              combinedProducts.push(newProduct);
+        setLoading(false);
+        setIsFetching(false);
+        return;
+      }
+      
+      // Sort products by recommendation score
+      const sortedProducts = sortProductsByRecommendation(filteredProducts);
+      
+      if (isRefresh) {
+        // For refresh, only add completely new products
+        const newProducts = sortedProducts.filter(newProduct => 
+          !products.some(p => p.id === newProduct.id)
+        );
+        
+        if (newProducts.length > 0) {
+          // Preload images for new products before adding them
+          newProducts.forEach(product => {
+            const imgUrl = getProductImageUrl(product);
+            if (imgUrl) {
+              const img = new Image();
+              img.src = imgUrl;
+              img.onload = () => {
+                console.log(`Preloaded image for new product ${product.id}: ${imgUrl}`);
+              };
+              img.onerror = () => {
+                console.warn(`Failed to preload image for new product ${product.id}: ${imgUrl}`);
+                // If image fails to load, update the product to use a placeholder
+                product.image_path = null;
+              };
             }
           });
           
-          console.log("Total products after combining:", combinedProducts.length);
-          return combinedProducts;
-        });
-        
-        // Only reset index if we didn't have products before
-        if (products.length === 0) {
-          setCurrentIndex(0);
+          setProducts(prevProducts => [...prevProducts, ...newProducts]);
         }
+      } else {
+        // For initial load, set all products
+        setProducts(sortedProducts);
+        setCurrentIndex(0);
       }
       
       setLoading(false);
+      setIsFetching(false);
     } catch (error) {
       console.error('Error fetching products:', error);
-      let errorMessage = 'Failed to load products. Please try again later.';
-      
-      setError(errorMessage);
-      setToastMessage(errorMessage);
-      setToastType('error');
-      setShowToast(true);
+      setError('Failed to load products. Please try again later.');
       setLoading(false);
+      setIsFetching(false);
     }
   };
 
   const handleSwipeLeft = (product) => {
-    if (!product) return;
+    if (!product || isSwiping) return;
     
-    // Add animation class
+    setIsSwiping(true);
+    updateUserPreferences(product, 'left');
+    
     if (cardRef.current) {
-      cardRef.current.classList.add('swiping-left');
-      // Remove the class after animation completes
+      const direction = -1;
+      const flyAwayDistance = direction * window.innerWidth * 1.5;
+      const rotate = direction * 30; // Reduced rotation for more natural feel
+      
+      // Enhanced animation with better easing and scaling
+      cardRef.current.style.transition = 'all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+      cardRef.current.style.transform = `translateX(${flyAwayDistance}px) rotate(${rotate}deg) scale(0.85)`;
+      cardRef.current.style.opacity = '0';
+      
+      // Smooth indicator fade
+      const rightIndicator = document.querySelector('.swipe-right-indicator');
+      const leftIndicator = document.querySelector('.swipe-left-indicator');
+      if (rightIndicator) {
+        rightIndicator.style.transition = 'opacity 0.3s ease';
+        rightIndicator.style.opacity = '0';
+      }
+      if (leftIndicator) {
+        leftIndicator.style.transition = 'opacity 0.3s ease';
+        leftIndicator.style.opacity = '0';
+      }
+      
+      // Handle the swipe after animation
       setTimeout(() => {
-        cardRef.current.classList.remove('swiping-left');
+        setSwipedLeft(prev => {
+          const newSwipedLeft = [...prev, product.id];
+          localStorage.setItem('swipedLeft', JSON.stringify(newSwipedLeft));
+          return newSwipedLeft;
+        });
+        
+        setCurrentIndex(prev => prev + 1);
+        setIsSwiping(false);
+        
+        // Reset card with smooth transition
+        if (cardRef.current) {
+          cardRef.current.style.transition = 'all 0.3s ease';
+          cardRef.current.style.transform = '';
+          cardRef.current.style.opacity = '1';
+          cardRef.current.style.boxShadow = '0 15px 35px rgba(0, 0, 0, 0.1), 0 3px 10px rgba(0, 0, 0, 0.05)';
+          cardRef.current.style.border = 'none';
+        }
       }, 600);
     }
-    
-    setSwipedLeft(prev => [...prev, product.id]);
-    setCurrentIndex(prev => prev + 1);
   };
 
   const handleSwipeRight = async (product) => {
-    if (!product) return;
+    if (!product || isSwiping) return;
     
-    // Add animation class
+    setIsSwiping(true);
+    updateUserPreferences(product, 'right');
+    
     if (cardRef.current) {
-      cardRef.current.classList.add('swiping-right');
-      // Remove the class after animation completes
+      const direction = 1;
+      const flyAwayDistance = direction * window.innerWidth * 1.5;
+      const rotate = direction * 30; // Reduced rotation for more natural feel
+      
+      // Enhanced animation with better easing and scaling
+      cardRef.current.style.transition = 'all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+      cardRef.current.style.transform = `translateX(${flyAwayDistance}px) rotate(${rotate}deg) scale(0.85)`;
+      cardRef.current.style.opacity = '0';
+      
+      // Smooth indicator fade
+      const rightIndicator = document.querySelector('.swipe-right-indicator');
+      const leftIndicator = document.querySelector('.swipe-left-indicator');
+      if (rightIndicator) {
+        rightIndicator.style.transition = 'opacity 0.3s ease';
+        rightIndicator.style.opacity = '0';
+      }
+      if (leftIndicator) {
+        leftIndicator.style.transition = 'opacity 0.3s ease';
+        leftIndicator.style.opacity = '0';
+      }
+      
+      // Handle the swipe after animation
       setTimeout(() => {
-        cardRef.current.classList.remove('swiping-right');
+        setSwipedRight(prev => {
+          const newSwipedRight = [...prev, product.id];
+          localStorage.setItem('swipedRight', JSON.stringify(newSwipedRight));
+          return newSwipedRight;
+        });
+        setLastSwipedProduct(product);
+        
+        setCurrentIndex(prev => prev + 1);
+        setIsSwiping(false);
+        
+        // Reset card with smooth transition
+        if (cardRef.current) {
+          cardRef.current.style.transition = 'all 0.3s ease';
+          cardRef.current.style.transform = '';
+          cardRef.current.style.opacity = '1';
+          cardRef.current.style.boxShadow = '0 15px 35px rgba(0, 0, 0, 0.1), 0 3px 10px rgba(0, 0, 0, 0.05)';
+          cardRef.current.style.border = 'none';
+        }
       }, 600);
     }
-    
-    setSwipedRight(prev => [...prev, product.id]);
-    setLastSwipedProduct(product);
-    
-    try {
-      // Add to cart with CART_ONLY type
-      const apiUrl = 'http://localhost:3001/api/cart';
-      console.log("Adding to cart:", product.id);
-      
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify({
-          product_id: product.id,
-          cart_type: 'CART_ONLY'
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-      
-      // Update cart count without showing toast
-      console.log("Product added to cart successfully, updating cart count");
-      if (updateCartCount) {
-        // Make sure to await the update
-        await updateCartCount();
-        console.log("Cart count updated");
-      } else {
-        console.warn("updateCartCount function not available");
-      }
-      
-      // Show action toast instead of modal
-      setShowActionToast(true);
-      
-      // Set a timer to auto-dismiss the toast after 5 seconds
-      if (actionToastTimerRef.current) {
-        clearTimeout(actionToastTimerRef.current);
-      }
-      
-      actionToastTimerRef.current = setTimeout(() => {
-        dismissActionToast();
-      }, 5000);
-      
-    } catch (err) {
-      console.error('Error adding to cart:', err);
-      // Only show toast for errors
-      setToastMessage('Failed to add to cart. Please try again.');
-      setToastType("error");
-      setShowToast(true);
-    }
-    
-    // Move to the next card
-    setCurrentIndex(prev => prev + 1);
   };
 
   // Handle mouse/touch events for dragging
@@ -297,55 +419,43 @@ const SwipeDiscovery = () => {
   const handleDragEnd = (e) => {
     setIsDragging(false);
     
-    if (Math.abs(currentX) > swipeThreshold) {
-      // Swipe was strong enough to register
+    if (Math.abs(currentX) > swipeThreshold && !isSwiping) {
       if (cardRef.current) {
-        // Make the card fly off in the direction of the swipe
         const direction = currentX > 0 ? 1 : -1;
         const flyAwayDistance = direction * window.innerWidth * 1.5;
-        const rotate = direction * 45; // More dramatic rotation
+        const rotate = direction * 30; // Reduced rotation for more natural feel
         
-        // Animate card flying away with easing
-        cardRef.current.style.transition = 'transform 0.8s cubic-bezier(0.165, 0.84, 0.44, 1), opacity 0.8s ease';
-        cardRef.current.style.transform = `translateX(${flyAwayDistance}px) rotate(${rotate}deg) scale(0.8)`;
+        // Enhanced animation with better easing and scaling
+        cardRef.current.style.transition = 'all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
+        cardRef.current.style.transform = `translateX(${flyAwayDistance}px) rotate(${rotate}deg) scale(0.85)`;
         cardRef.current.style.opacity = '0';
         
-        // Reset indicators
+        // Smooth indicator fade
         const rightIndicator = document.querySelector('.swipe-right-indicator');
         const leftIndicator = document.querySelector('.swipe-left-indicator');
-        if (rightIndicator) rightIndicator.style.opacity = 0;
-        if (leftIndicator) leftIndicator.style.opacity = 0;
+        if (rightIndicator) {
+          rightIndicator.style.transition = 'opacity 0.3s ease';
+          rightIndicator.style.opacity = '0';
+        }
+        if (leftIndicator) {
+          leftIndicator.style.transition = 'opacity 0.3s ease';
+          leftIndicator.style.opacity = '0';
+        }
         
-        // Handle the swipe action after animation
+        // Handle the swipe after animation
         setTimeout(() => {
           if (currentX > 0) {
             handleSwipeRight(products[currentIndex]);
           } else {
             handleSwipeLeft(products[currentIndex]);
           }
-          // Reset card position
           setCurrentX(0);
-          if (cardRef.current) {
-            cardRef.current.style.transition = '';
-            cardRef.current.style.transform = '';
-            cardRef.current.style.opacity = '1';
-            cardRef.current.style.boxShadow = '';
-            cardRef.current.style.border = 'none';
-          }
         }, 300);
-      } else {
-        // Card ref not available, handle swipe immediately
-        if (currentX > 0) {
-          handleSwipeRight(products[currentIndex]);
-        } else {
-          handleSwipeLeft(products[currentIndex]);
-        }
-        setCurrentX(0);
       }
     } else {
-      // Not swiped far enough, return to center with animation
+      // Not swiped far enough, return to center with smooth animation
       if (cardRef.current) {
-        cardRef.current.style.transition = 'transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.5s ease, border 0.5s ease';
+        cardRef.current.style.transition = 'all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
         cardRef.current.style.transform = '';
         cardRef.current.style.boxShadow = '0 15px 35px rgba(0, 0, 0, 0.1), 0 3px 10px rgba(0, 0, 0, 0.05)';
         cardRef.current.style.border = 'none';
@@ -361,16 +471,16 @@ const SwipeDiscovery = () => {
         setCurrentX(0);
       }
       
-      // Reset indicators with fade
+      // Smooth indicator fade
       const rightIndicator = document.querySelector('.swipe-right-indicator');
       const leftIndicator = document.querySelector('.swipe-left-indicator');
       if (rightIndicator) {
         rightIndicator.style.transition = 'opacity 0.3s ease';
-        rightIndicator.style.opacity = 0;
+        rightIndicator.style.opacity = '0';
       }
       if (leftIndicator) {
         leftIndicator.style.transition = 'opacity 0.3s ease';
-        leftIndicator.style.opacity = 0;
+        leftIndicator.style.opacity = '0';
       }
     }
   };
@@ -486,22 +596,6 @@ const SwipeDiscovery = () => {
     }
   };
 
-  const getProductImageUrl = (product) => {
-    // Check if the product has a valid image path
-    if (!product.image_path || product.image_path === '') {
-      // If not, use a category-specific placeholder
-      return getCategoryPlaceholder(product.category);
-    }
-    
-    // If the image path is a full URL, use it directly
-    if (product.image_path.startsWith('http')) {
-      return product.image_path;
-    }
-    
-    // Otherwise, append it to the API base URL
-    return `http://localhost:3001${product.image_path}`;
-  };
-
   const getCategoryPlaceholder = (category) => {
     // Map product categories to specific placeholder images using Unsplash
     const categoryImages = {
@@ -540,6 +634,12 @@ const SwipeDiscovery = () => {
         if (imgUrl) {
           const img = new Image();
           img.src = imgUrl;
+          img.onload = () => {
+            console.log(`Preloaded image for product ${products[nextIndex].id}`);
+          };
+          img.onerror = () => {
+            console.warn(`Failed to preload image for product ${products[nextIndex].id}`);
+          };
         }
       }
     }
@@ -556,6 +656,17 @@ const SwipeDiscovery = () => {
       <div className="swipe-header">
         <h1>Swipe and Shop</h1>
         <p>Swipe right on items you like, left on those you don't</p>
+        <button 
+          className="refresh-btn" 
+          onClick={() => {
+            if (!isFetching) {
+              fetchProducts(true);
+            }
+          }}
+          disabled={isFetching}
+        >
+          {isFetching ? 'Refreshing...' : 'Refresh Products'}
+        </button>
       </div>
       
       <div className="swipe-area">
@@ -610,12 +721,12 @@ const SwipeDiscovery = () => {
                   </div>
                 )}
                 <img 
-                  src={getProductImageUrl(products[currentIndex])} 
+                  src={getProductImageUrl(products[currentIndex])}
                   alt={products[currentIndex].name}
                   onLoad={() => setImageLoading(false)}
                   onError={(e) => {
                     e.target.onerror = null;
-                    e.target.src = getCategoryPlaceholder(products[currentIndex].category);
+                    e.target.src = "/api/placeholder/300/300";
                     setImageLoading(false);
                   }}
                 />

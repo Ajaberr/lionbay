@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useAuth } from '../App';
+import { useAuth, useMessages } from '../App';
 import { io } from 'socket.io-client';
 import '../styles/HelpChatWidget.css';
 
@@ -7,12 +7,12 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
 
 const HelpChatWidget = () => {
   const { currentUser, authAxios } = useAuth();
+  const { incrementUnreadCount } = useMessages();
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [socket, setSocket] = useState(null);
-  const [unreadCount, setUnreadCount] = useState(0);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -34,7 +34,7 @@ const HelpChatWidget = () => {
       const isNewMessage = !localStorage.getItem(`msg_seen_${response.id}`);
       
       if (!isOpen && isNewMessage) {
-        setUnreadCount(prev => prev + 1);
+        incrementUnreadCount();
       }
       
       setMessages(prev => {
@@ -70,7 +70,7 @@ const HelpChatWidget = () => {
     return () => {
       if (newSocket) newSocket.disconnect();
     };
-  }, [currentUser, isOpen]);
+  }, [currentUser, isOpen, incrementUnreadCount]);
 
   // Load persisted messages on component mount and fetch new ones when chat is opened
   useEffect(() => {
@@ -88,8 +88,8 @@ const HelpChatWidget = () => {
       if (isOpen) {
         fetchMessages();
 
-        // Reset unread counter when opening chat
-        setUnreadCount(0);
+        // Reset unread counter when opening
+        incrementUnreadCount();
         
         // Mark all messages as seen
         const savedMessages = JSON.parse(localStorage.getItem('helpChatMessages') || '[]');
@@ -107,7 +107,7 @@ const HelpChatWidget = () => {
         }, 300);
       }
     }
-  }, [isOpen, currentUser]);
+  }, [isOpen, currentUser, incrementUnreadCount]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -334,9 +334,6 @@ const HelpChatWidget = () => {
         aria-label="Help Chat"
       >
         {isOpen ? '×' : '?'}
-        {!isOpen && unreadCount > 0 && (
-          <span className="help-chat-badge">{unreadCount}</span>
-        )}
       </button>
     </div>
   );

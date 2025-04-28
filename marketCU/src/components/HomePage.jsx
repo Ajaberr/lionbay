@@ -25,22 +25,22 @@ function HomePage() {
         if (adminEmails.length > 0) {
           // Get all products
           const productsResponse = await axios.get(`${API_BASE_URL}/products`);
-          // Filter for products from admin users and limit to 6
+          // Filter for products from admin users and limit to 3
           const adminProducts = productsResponse.data
             .filter(product => adminEmails.includes(product.seller_email))
-            .slice(0, 6);
+            .slice(0, 3);
           
           setFeaturedProducts(adminProducts);
         } else {
           // Fallback to regular products if no admin emails found
-          const response = await axios.get(`${API_BASE_URL}/products?limit=6`);
+          const response = await axios.get(`${API_BASE_URL}/products?limit=3`);
           setFeaturedProducts(response.data);
         }
       } catch (error) {
         console.error('Error fetching featured products:', error);
         // Fallback to regular products if there's an error
         try {
-          const response = await axios.get(`${API_BASE_URL}/products?limit=6`);
+          const response = await axios.get(`${API_BASE_URL}/products?limit=3`);
           setFeaturedProducts(response.data);
         } catch (fallbackError) {
           console.error('Error fetching fallback products:', fallbackError);
@@ -69,9 +69,9 @@ function HomePage() {
 
       {/* Featured Products Section */}
       <section className="featured-products">
-        <h2>Items That Don't Suck</h2>
+        <h2>Featured Items</h2>
         {loading ? (
-          <div className="loading">Loading the good stuff...</div>
+          <div className="loading">Loading featured items...</div>
         ) : featuredProducts.length > 0 ? (
           <>
             <div className="featured-products-grid">
@@ -97,10 +97,10 @@ function HomePage() {
                 </Link>
               ))}
             </div>
-            <Link to="/market" className="view-all-link">See all the things →</Link>
+            <Link to="/market" className="view-all-link">View All Products →</Link>
           </>
         ) : (
-          <div className="no-products">Nothing here yet. Be the first to sell something!</div>
+          <div className="no-products">No featured items available yet.</div>
         )}
       </section>
 
