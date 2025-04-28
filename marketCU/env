@@ -1,0 +1,23 @@
+# Database Configuration
+# PostgreSQL connection string from Render
+DATABASE_URL=postgresql://cump_db_user:2x5LNUrbJwC1rrA4MPmVMkrk8fjZU9QW@dpg-cvdo1ulumphs73bjbp8g-a.oregon-postgres.render.com/cump_db
+
+# Security
+JWT_SECRET=your-jwt-secret-key
+
+# Email Service
+EMAIL_USER=culionbay@gmail.com
+# Use a Gmail App Password here, not your regular password
+# Generate one at: https://myaccount.google.com/apppasswords
+EMAIL_PASSWORD=qcvjminzeegaafyv
+RESEND_API_KEY=your-resend-api-key
+
+# Admin Configuration
+ADMIN_EMAILS=aaa2485@columbia.edu,amj2234@columbia.edu
+
+# For testing (set to TRUE to skip actual email sending)
+SKIP_EMAIL_VERIFICATION=FALSE
+
+# Server Configuration
+PORT=3001
+API_BASE_URL=http://localhost:3001
