@@ -15,8 +15,10 @@ import SwipeDiscovery from './components/SwipeDiscovery';
 import DiscoverFeature from './components/DiscoverFeature';
 
 // API Base URL Configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 
+  (import.meta.env.PROD ? 'https://lionbay-api.onrender.com/api' : 'http://localhost:3001/api');
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 
+  (import.meta.env.PROD ? 'https://lionbay-api.onrender.com' : 'http://localhost:3001');
 
 // Define product categories for consistency
 const PRODUCT_CATEGORIES = [
