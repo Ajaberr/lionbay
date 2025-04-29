@@ -679,121 +679,34 @@ app.delete('/api/products/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Chat and messages API
+// Chat and Messaging Endpoints
 app.post('/api/chats', authenticateToken, async (req, res) => {
   try {
-    const { product_id, seller_id } = req.body;
+    const { seller_id, product_id } = req.body;
     const buyer_id = req.user.userId;
-    
-    console.log(`Creating chat for product: ${product_id}, seller: ${seller_id}, buyer: ${buyer_id}`);
-    
-    if (!product_id) {
-      return res.status(400).json({ error: 'Product ID is required' });
-    }
-    
-    // If no seller_id provided, fetch it from the product
-    let finalSellerId = seller_id;
-    let productName = '';
-    if (!finalSellerId) {
-      console.log('No seller_id provided, fetching from product');
-      const productResult = await pool.query(
-        'SELECT seller_id, name FROM products WHERE id = $1',
-        [product_id]
-      );
-      
-      if (productResult.rows.length === 0) {
-        return res.status(404).json({ error: 'Product not found' });
-      }
-      
-      finalSellerId = productResult.rows[0].seller_id;
-      productName = productResult.rows[0].name;
-      console.log(`Fetched seller_id: ${finalSellerId} from product`);
-    } else {
-      // Get product name for email
-      const productResult = await pool.query(
-        'SELECT name FROM products WHERE id = $1',
-        [product_id]
-      );
-      
-      if (productResult.rows.length > 0) {
-        productName = productResult.rows[0].name;
-      }
-    }
-    
-    // Don't allow chats with yourself
-    if (finalSellerId === buyer_id) {
-      return res.status(400).json({ error: 'Cannot create chat with yourself' });
-    }
-    
+
     // Check if chat already exists
-    console.log(`Checking for existing chat with product: ${product_id}, buyer: ${buyer_id}, seller: ${finalSellerId}`);
-    const existingChatResult = await pool.query(
-      'SELECT * FROM chats WHERE product_id = $1 AND buyer_id = $2 AND seller_id = $3',
-      [product_id, buyer_id, finalSellerId]
+    const existingChat = await pool.query(
+      'SELECT * FROM chats WHERE (buyer_id = $1 AND seller_id = $2 AND product_id = $3) OR (buyer_id = $2 AND seller_id = $1 AND product_id = $3)',
+      [buyer_id, seller_id, product_id]
     );
-    
-    let chat;
-    
-    if (existingChatResult.rows.length > 0) {
-      console.log('Existing chat found:', existingChatResult.rows[0].id);
-      chat = existingChatResult.rows[0];
-    } else {
-    // Create new chat
-    console.log('Creating new chat');
-    const newChatResult = await pool.query(
-      'INSERT INTO chats (product_id, buyer_id, seller_id) VALUES ($1, $2, $3) RETURNING *',
-      [product_id, buyer_id, finalSellerId]
-    );
-    
-      chat = newChatResult.rows[0];
-      console.log('New chat created:', chat.id);
-      
-      // Get buyer and seller email addresses for notification
-      const usersResult = await pool.query(
-        'SELECT id, email FROM users WHERE id IN ($1, $2)',
-        [buyer_id, finalSellerId]
-      );
-      
-      const users = usersResult.rows.reduce((acc, user) => {
-        acc[user.id] = user.email;
-        return acc;
-      }, {});
-      
-      const buyerEmail = users[buyer_id];
-      const sellerEmail = users[finalSellerId];
-      
-      // Send email notification to seller about new buyer interest
-      if (sellerEmail && process.env.EMAIL_USER) {
-        try {
-          await transporter.sendMail({
-            from: `"Lion Bay" <${process.env.EMAIL_USER}>`,
-            to: sellerEmail,
-            subject: `New Interest in Your Product: ${productName}`,
-            html: `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                <h1 style="color: #1c4587;">Lion Bay</h1>
-                <p>Good news! A buyer is interested in your product "${productName}".</p>
-                <p>User with email ${buyerEmail} has contacted you about this item.</p>
-                <p>Please log in to Lion Bay to respond to their message.</p>
-                <div style="margin-top: 20px; text-align: center;">
-                  <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/chats/${chat.id}" 
-                     style="background-color: #1c4587; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block;">
-                    View Messages
-                  </a>
-                </div>
-              </div>
-            `
-          });
-          
-          console.log(`Notification email sent to seller ${sellerEmail}`);
-        } catch (emailError) {
-          console.error('Error sending seller notification email:', emailError);
-          // Continue even if email fails
-        }
-      }
+
+    if (existingChat.rows.length > 0) {
+      return res.json(existingChat.rows[0]);
     }
+
+    // Create new chat
+    const result = await pool.query(
+      'INSERT INTO chats (buyer_id, seller_id, product_id) VALUES ($1, $2, $3) RETURNING *',
+      [buyer_id, seller_id, product_id]
+    );
+
+    const chat = result.rows[0];
     
-    res.status(existingChatResult.rows.length > 0 ? 200 : 201).json(chat);
+    // Notify both users about the new chat
+    io.to(buyer_id).to(seller_id).emit('new_chat', chat);
+    
+    res.json(chat);
   } catch (error) {
     console.error('Error creating chat:', error);
     res.status(500).json({ error: 'Failed to create chat' });
@@ -804,224 +717,135 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
     
-    const chatsResult = await pool.query(
+    const result = await pool.query(
       `SELECT c.*, 
-        p.name as product_name, p.price as product_price, p.image_path as product_image,
-        u1.email as buyer_email, u2.email as seller_email,
-        (SELECT EXISTS(
-          SELECT 1 FROM messages m 
-          WHERE m.chat_id = c.id 
-            AND m.sender_id != $1 
-            AND m.is_read = false
-        )) as has_unread,
-        (SELECT MAX(created_at) FROM messages WHERE chat_id = c.id) as last_message_at,
-        (SELECT message FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message,
-        (SELECT sender_id FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_sender_id
+        p.name as product_name, p.image_path as product_image,
+        u1.username as buyer_username, u1.profile_picture as buyer_profile_picture,
+        u2.username as seller_username, u2.profile_picture as seller_profile_picture,
+        (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id AND m.is_read = false AND m.sender_id != $1) as unread_count
       FROM chats c
       JOIN products p ON c.product_id = p.id
       JOIN users u1 ON c.buyer_id = u1.id
       JOIN users u2 ON c.seller_id = u2.id
-      WHERE c.buyer_id = $1 OR c.seller_id = $1 
-      ORDER BY last_message_at DESC NULLS LAST, c.created_at DESC`,
+      WHERE c.buyer_id = $1 OR c.seller_id = $1
+      ORDER BY c.updated_at DESC`,
       [userId]
     );
     
-    res.json(chatsResult.rows);
+    res.json(result.rows);
   } catch (error) {
     console.error('Error fetching chats:', error);
     res.status(500).json({ error: 'Failed to fetch chats' });
   }
 });
 
-// Helper function to validate UUID
-const isValidUUID = (uuid) => {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(uuid);
-};
-
-// Update chat endpoints to use UUID validation
-app.get('/api/chats/:id', authenticateToken, async (req, res) => {
+app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
   try {
-    const chatId = req.params.id;
-    
-    // Validate chat ID is a valid UUID
-    if (!isValidUUID(chatId)) {
-      return res.status(400).json({ error: 'Invalid chat ID format' });
-    }
-    
-    const chatResult = await pool.query(
-      `SELECT c.*, 
-        p.name as product_name, p.image_path as product_image,
-        u1.email as buyer_email, u2.email as seller_email
-      FROM chats c
-      JOIN products p ON c.product_id = p.id
-      JOIN users u1 ON c.buyer_id = u1.id
-      JOIN users u2 ON c.seller_id = u2.id
-      WHERE c.id = $1`,
-      [chatId]
-    );
-    
-    if (chatResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Chat not found' });
-    }
-    
-    const chat = chatResult.rows[0];
-    
-    // Ensure user is authorized to access this chat
-    if (chat.buyer_id !== req.user.userId && chat.seller_id !== req.user.userId) {
-      return res.status(403).json({ error: 'Unauthorized access to chat' });
-    }
-    
-    res.json(chat);
-  } catch (error) {
-    console.error('Error fetching chat:', error);
-    res.status(500).json({ error: 'Failed to fetch chat' });
-  }
-});
-
-// Update mark-read endpoint
-app.post('/api/chats/:id/mark-read', authenticateToken, async (req, res) => {
-  try {
-    const chatId = req.params.id;
-    
-    // Validate chat ID is a valid UUID
-    if (!isValidUUID(chatId)) {
-      return res.status(400).json({ error: 'Invalid chat ID format' });
-    }
-    
+    const { chatId } = req.params;
     const userId = req.user.userId;
-    
-    // Verify user has access to chat
-    const chatResult = await pool.query(
-      'SELECT * FROM chats WHERE id = $1',
-      [chatId]
-    );
-    
-    if (chatResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Chat not found' });
-    }
-    
-    const chat = chatResult.rows[0];
-    
-    // Ensure user is authorized to access this chat
-    if (chat.buyer_id !== userId && chat.seller_id !== userId) {
-      return res.status(403).json({ error: 'Unauthorized access to chat' });
-    }
-    
-    // Mark messages from other users as read
-    await pool.query(
-      `UPDATE messages 
-      SET is_read = true 
-      WHERE chat_id = $1 AND sender_id != $2 AND is_read = false`,
+
+    // Verify user has access to this chat
+    const chatAccess = await pool.query(
+      'SELECT * FROM chats WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
       [chatId, userId]
     );
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error marking messages as read:', error);
-    res.status(500).json({ error: 'Failed to mark messages as read' });
-  }
-});
 
-// Update messages endpoint
-app.get('/api/chats/:id/messages', authenticateToken, async (req, res) => {
-  try {
-    const chatId = req.params.id;
-    
-    // Validate chat ID is a valid UUID
-    if (!isValidUUID(chatId)) {
-      return res.status(400).json({ error: 'Invalid chat ID format' });
+    if (chatAccess.rows.length === 0) {
+      return res.status(403).json({ error: 'Access denied' });
     }
-    
-    // Verify user has access to chat
-    const chatResult = await pool.query(
-      'SELECT * FROM chats WHERE id = $1',
-      [chatId]
-    );
-    
-    if (chatResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Chat not found' });
-    }
-    
-    const chat = chatResult.rows[0];
-    
-    // Ensure user is authorized to access this chat
-    if (chat.buyer_id !== req.user.userId && chat.seller_id !== req.user.userId) {
-      return res.status(403).json({ error: 'Unauthorized access to messages' });
-    }
-    
-    const messagesResult = await pool.query(
-      `SELECT m.*, u.email as sender_email 
+
+    const result = await pool.query(
+      `SELECT m.*, u.username, u.profile_picture
       FROM messages m
       JOIN users u ON m.sender_id = u.id
-      WHERE m.chat_id = $1 
+      WHERE m.chat_id = $1
       ORDER BY m.created_at ASC`,
       [chatId]
     );
-    
-    res.json(messagesResult.rows);
+
+    res.json(result.rows);
   } catch (error) {
     console.error('Error fetching messages:', error);
     res.status(500).json({ error: 'Failed to fetch messages' });
   }
 });
 
-// Check if user has any unread messages
-app.get('/api/chats/has-unread', authenticateToken, async (req, res) => {
+app.post('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.userId;
-    
-    // Check for messages where user is not the sender and is_read is false
-    const unreadResult = await pool.query(
-      `SELECT EXISTS(
-        SELECT 1
-        FROM messages m
-        JOIN chats c ON m.chat_id = c.id
-        WHERE (c.buyer_id = $1 OR c.seller_id = $1)
-          AND m.sender_id != $1
-          AND m.is_read = false
-      ) as has_unread`,
-      [userId]
+    const { chatId } = req.params;
+    const { message } = req.body;
+    const senderId = req.user.userId;
+
+    // Verify user has access to this chat
+    const chatAccess = await pool.query(
+      'SELECT * FROM chats WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
+      [chatId, senderId]
     );
+
+    if (chatAccess.rows.length === 0) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Insert message
+    const result = await pool.query(
+      'INSERT INTO messages (chat_id, sender_id, message, is_read) VALUES ($1, $2, $3, false) RETURNING *',
+      [chatId, senderId, message]
+    );
+
+    // Update chat's updated_at timestamp
+    await pool.query(
+      'UPDATE chats SET updated_at = NOW() WHERE id = $1',
+      [chatId]
+    );
+
+    const newMessage = result.rows[0];
+
+    // Get additional user info for the response
+    const userInfo = await pool.query(
+      'SELECT username, profile_picture FROM users WHERE id = $1',
+      [senderId]
+    );
+
+    const messageWithUser = {
+      ...newMessage,
+      username: userInfo.rows[0].username,
+      profile_picture: userInfo.rows[0].profile_picture
+    };
+
+    // Notify chat participants
+    const chat = chatAccess.rows[0];
+    const recipientId = chat.buyer_id === senderId ? chat.seller_id : chat.buyer_id;
     
-    res.json({ hasUnread: unreadResult.rows[0].has_unread });
+    io.to(recipientId).emit('new_message', messageWithUser);
+    
+    res.json(messageWithUser);
   } catch (error) {
-    console.error('Error checking unread messages:', error);
-    res.status(500).json({ error: 'Failed to check unread messages' });
+    console.error('Error sending message:', error);
+    res.status(500).json({ error: 'Failed to send message' });
   }
 });
 
-// Mark all messages in a chat as read
-app.post('/api/chats/:id/mark-read', authenticateToken, async (req, res) => {
+app.put('/api/chats/:chatId/messages/mark-read', authenticateToken, async (req, res) => {
   try {
-    const chatId = req.params.id;
+    const { chatId } = req.params;
     const userId = req.user.userId;
-    
-    // Verify user has access to chat
-    const chatResult = await pool.query(
-      'SELECT * FROM chats WHERE id = $1',
-      [chatId]
-    );
-    
-    if (chatResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Chat not found' });
-    }
-    
-    const chat = chatResult.rows[0];
-    
-    // Ensure user is authorized to access this chat
-    if (chat.buyer_id !== userId && chat.seller_id !== userId) {
-      return res.status(403).json({ error: 'Unauthorized access to chat' });
-    }
-    
-    // Mark messages from other users as read
-    await pool.query(
-      `UPDATE messages 
-      SET is_read = true 
-      WHERE chat_id = $1 AND sender_id != $2 AND is_read = false`,
+
+    // Verify user has access to this chat
+    const chatAccess = await pool.query(
+      'SELECT * FROM chats WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
       [chatId, userId]
     );
-    
+
+    if (chatAccess.rows.length === 0) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Mark all messages from other user as read
+    await pool.query(
+      'UPDATE messages SET is_read = true WHERE chat_id = $1 AND sender_id != $2 AND is_read = false',
+      [chatId, userId]
+    );
+
     res.json({ success: true });
   } catch (error) {
     console.error('Error marking messages as read:', error);
@@ -1029,698 +853,43 @@ app.post('/api/chats/:id/mark-read', authenticateToken, async (req, res) => {
   }
 });
 
-// We're removing the unread-count endpoint and implementing it client-side
-
-app.post('/api/chats/:id/messages', authenticateToken, async (req, res) => {
-  try {
-    const chat_id = req.params.id;
-    const sender_id = req.user.userId;
-    const { message } = req.body;
-    
-    // Verify chat exists and user has access
-    const chatResult = await pool.query(
-      'SELECT * FROM chats WHERE id = $1',
-      [chat_id]
-    );
-    
-    if (chatResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Chat not found' });
-    }
-    
-    const chat = chatResult.rows[0];
-    
-    // Ensure user is authorized to send message in this chat
-    if (chat.buyer_id !== sender_id && chat.seller_id !== sender_id) {
-      return res.status(403).json({ error: 'Unauthorized to send message' });
-    }
-    
-    // Create new message with is_read = false
-    const newMessageResult = await pool.query(
-      `INSERT INTO messages (chat_id, sender_id, message, is_read) 
-      VALUES ($1, $2, $3, $4) 
-      RETURNING *`,
-      [chat_id, sender_id, message, false]
-    );
-    
-    // Get the sender email
-    const senderResult = await pool.query(
-      'SELECT email FROM users WHERE id = $1',
-      [sender_id]
-    );
-    
-    const newMessage = {
-      ...newMessageResult.rows[0],
-      sender_email: senderResult.rows[0].email
-    };
-    
-    // Emit new message event to socket
-    io.to(chat_id).emit('new_message', newMessage);
-    
-    // Also emit to the recipient's personal room for unread count
-    const recipientId = chat.buyer_id === sender_id ? chat.seller_id : chat.buyer_id;
-    io.to(recipientId).emit('unread_message', newMessage);
-    
-    res.status(201).json(newMessage);
-  } catch (error) {
-    console.error('Error creating message:', error);
-    res.status(500).json({ error: 'Failed to create message' });
-  }
-});
-
-// Cart API Endpoints
-app.get('/api/cart', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    
-    // Get all cart items for the user with product and chat details
-    const cartResult = await pool.query(
-      `SELECT ci.*, 
-        p.name as product_name, p.price as product_price, p.image_path as product_image, p.condition as product_condition,
-        p.seller_id, u.email as seller_email,
-        c.id as chat_id
-      FROM cart_items ci
-      JOIN products p ON ci.product_id = p.id
-      JOIN users u ON p.seller_id = u.id
-      LEFT JOIN chats c ON ci.chat_id = c.id
-      WHERE ci.user_id = $1
-      ORDER BY ci.added_at DESC`,
-      [userId]
-    );
-    
-    res.json(cartResult.rows);
-  } catch (error) {
-    console.error('Error fetching cart items:', error);
-    res.status(500).json({ error: 'Failed to fetch cart items' });
-  }
-});
-
-// Add new endpoint to get cart count
-app.get('/api/cart/count', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    
-    // Get count of cart items for the user
-    const countResult = await pool.query(
-      'SELECT COUNT(*) as count FROM cart_items WHERE user_id = $1',
-      [userId]
-    );
-    
-    res.json({ count: parseInt(countResult.rows[0].count) });
-  } catch (error) {
-    console.error('Error fetching cart count:', error);
-    res.status(500).json({ error: 'Failed to fetch cart count' });
-  }
-});
-
-app.post('/api/cart', authenticateToken, async (req, res) => {
-  try {
-    const { product_id, cart_type, chat_id } = req.body;
-    const user_id = req.user.userId;
-    
-    if (!product_id) {
-      return res.status(400).json({ error: 'Product ID is required' });
-    }
-    
-    if (!['CONTACTED', 'CART_ONLY'].includes(cart_type)) {
-      return res.status(400).json({ error: 'Invalid cart type. Must be CONTACTED or CART_ONLY' });
-    }
-    
-    // Check if product exists
-    const productResult = await pool.query(
-      'SELECT * FROM products WHERE id = $1',
-      [product_id]
-    );
-    
-    if (productResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Product not found' });
-    }
-    
-    // Don't allow adding your own products to cart
-    if (productResult.rows[0].seller_id === user_id) {
-      return res.status(400).json({ error: 'Cannot add your own product to cart' });
-    }
-    
-    // Check if item is already in cart - if yes, update it
-    const existingCartItem = await pool.query(
-      'SELECT * FROM cart_items WHERE user_id = $1 AND product_id = $2',
-      [user_id, product_id]
-    );
-    
-    if (existingCartItem.rows.length > 0) {
-      // Update the existing cart item
-      const updatedItem = await pool.query(
-        'UPDATE cart_items SET cart_type = $1, chat_id = $2 WHERE user_id = $3 AND product_id = $4 RETURNING *',
-        [cart_type, chat_id, user_id, product_id]
-      );
-      
-      return res.json(updatedItem.rows[0]);
-    }
-    
-    // Add new item to cart
-    const result = await pool.query(
-      'INSERT INTO cart_items (user_id, product_id, cart_type, chat_id) VALUES ($1, $2, $3, $4) RETURNING *',
-      [user_id, product_id, cart_type, chat_id]
-    );
-    
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    console.error('Error adding item to cart:', error);
-    res.status(500).json({ error: 'Failed to add item to cart' });
-  }
-});
-
-app.delete('/api/cart/:id', authenticateToken, async (req, res) => {
-  try {
-    const cartItemId = req.params.id;
-    const userId = req.user.userId;
-    
-    // Verify the cart item belongs to the user
-    const cartItemCheck = await pool.query(
-      'SELECT * FROM cart_items WHERE id = $1 AND user_id = $2',
-      [cartItemId, userId]
-    );
-    
-    if (cartItemCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Cart item not found or not authorized' });
-    }
-    
-    // Delete the cart item
-    await pool.query(
-      'DELETE FROM cart_items WHERE id = $1',
-      [cartItemId]
-    );
-    
-    res.json({ success: true, message: 'Item removed from cart' });
-  } catch (error) {
-    console.error('Error removing item from cart:', error);
-    res.status(500).json({ error: 'Failed to remove item from cart' });
-  }
-});
-
-app.put('/api/cart/:id', authenticateToken, async (req, res) => {
-  try {
-    const cartItemId = req.params.id;
-    const userId = req.user.userId;
-    const { cart_type, chat_id } = req.body;
-    
-    if (!['CONTACTED', 'CART_ONLY'].includes(cart_type)) {
-      return res.status(400).json({ error: 'Invalid cart type. Must be CONTACTED or CART_ONLY' });
-    }
-    
-    // Verify the cart item belongs to the user
-    const cartItemCheck = await pool.query(
-      'SELECT * FROM cart_items WHERE id = $1 AND user_id = $2',
-      [cartItemId, userId]
-    );
-    
-    if (cartItemCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Cart item not found or not authorized' });
-    }
-    
-    // Update the cart item
-    const result = await pool.query(
-      'UPDATE cart_items SET cart_type = $1, chat_id = $2 WHERE id = $3 RETURNING *',
-      [cart_type, chat_id, cartItemId]
-    );
-    
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error('Error updating cart item:', error);
-    res.status(500).json({ error: 'Failed to update cart item' });
-  }
-});
-
-// Admin API
-app.get('/api/admin/dashboard', authenticateToken, isAdmin, async (req, res) => {
-  try {
-    // Get user stats
-    const userStatsResult = await pool.query(`
-      SELECT 
-        COUNT(*) as total_users,
-        COUNT(CASE WHEN created_at > NOW() - INTERVAL '7 days' THEN 1 END) as new_users_last_week
-      FROM users
-    `);
-    
-    // Get product stats
-    const productStatsResult = await pool.query(`
-      SELECT 
-        COUNT(*) as total_products,
-        COUNT(CASE WHEN created_at > NOW() - INTERVAL '7 days' THEN 1 END) as new_products_last_week
-      FROM products
-    `);
-    
-    // Get chat stats
-    const chatStatsResult = await pool.query(`
-      SELECT 
-        COUNT(*) as total_chats,
-        COUNT(CASE WHEN created_at > NOW() - INTERVAL '7 days' THEN 1 END) as new_chats_last_week
-      FROM chats
-    `);
-    
-    // Get message stats
-    const messageStatsResult = await pool.query(`
-      SELECT 
-        COUNT(*) as total_messages,
-        COUNT(CASE WHEN created_at > NOW() - INTERVAL '7 days' THEN 1 END) as new_messages_last_week
-      FROM messages
-    `);
-    
-    // Get recent users
-    const recentUsersResult = await pool.query(`
-      SELECT id, email, email_verified, created_at
-      FROM users
-      ORDER BY created_at DESC
-      LIMIT 10
-    `);
-    
-    // Get recent products
-    const recentProductsResult = await pool.query(`
-      SELECT p.id, p.name, p.price, p.category, p.created_at, u.email as seller_email
-      FROM products p
-      JOIN users u ON p.seller_id = u.id
-      ORDER BY p.created_at DESC
-      LIMIT 10
-    `);
-    
-    res.json({
-      stats: {
-        users: userStatsResult.rows[0],
-        products: productStatsResult.rows[0],
-        chats: chatStatsResult.rows[0],
-        messages: messageStatsResult.rows[0]
-      },
-      recentUsers: recentUsersResult.rows,
-      recentProducts: recentProductsResult.rows
-    });
-  } catch (error) {
-    console.error('Error fetching admin dashboard data:', error);
-    res.status(500).json({ error: 'Failed to fetch admin dashboard data' });
-  }
-});
-
-// Admin verification code bypass
-app.get('/api/admin/verification-code/:email', authenticateToken, isAdmin, async (req, res) => {
-  try {
-    const { email } = req.params;
-    
-    const userResult = await pool.query(
-      'SELECT verification_code FROM users WHERE email = $1',
-      [email]
-    );
-    
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
-    res.json({ 
-      email, 
-      verificationCode: userResult.rows[0].verification_code 
-    });
-  } catch (error) {
-    console.error('Error fetching verification code:', error);
-    res.status(500).json({ error: 'Failed to fetch verification code' });
-  }
-});
-
-// Admin help messages
-app.post('/api/admin/help-messages', authenticateToken, async (req, res) => {
-  try {
-    const { message } = req.body;
-    const user_id = req.user.userId;
-    
-    const result = await pool.query(
-      'INSERT INTO help_messages (user_id, message, is_from_admin) VALUES ($1, $2, $3) RETURNING *',
-      [user_id, message, false]
-    );
-    
-    // Notify admins via socket about new help message
-    io.to('admin-room').emit('new_help_message', {
-      ...result.rows[0],
-      user_email: req.user.email
-    });
-    
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    console.error('Error creating help message:', error);
-    res.status(500).json({ error: 'Failed to send help message' });
-  }
-});
-
-app.get('/api/admin/help-messages', authenticateToken, async (req, res) => {
-  try {
-    const user_id = req.user.userId;
-    const isUserAdmin = checkAdmin(req.user.email);
-    
-    let query;
-    let params;
-    
-    if (isUserAdmin) {
-      // Admins can see all help messages with user details
-      query = `
-        SELECT hm.*, u.email as user_email, response_user.email as admin_email
-        FROM help_messages hm
-        JOIN users u ON hm.user_id = u.id
-        LEFT JOIN users response_user ON hm.is_from_admin = true AND hm.user_id = response_user.id
-        ORDER BY hm.created_at DESC
-      `;
-      params = [];
-    } else {
-      // Regular users can only see their own messages
-      query = `
-        SELECT hm.*, u.email as user_email, response_user.email as admin_email
-        FROM help_messages hm
-        JOIN users u ON hm.user_id = u.id
-        LEFT JOIN users response_user ON hm.is_from_admin = true AND hm.user_id = response_user.id
-        WHERE hm.user_id = $1 OR (hm.is_from_admin = true AND hm.to_user_id = $1)
-        ORDER BY hm.created_at DESC
-      `;
-      params = [user_id];
-    }
-    
-    const result = await pool.query(query, params);
-    
-    // Group messages by conversation
-    const conversations = {};
-    
-    for (const message of result.rows) {
-      const conversationUserId = message.is_from_admin ? message.to_user_id : message.user_id;
-      
-      if (!conversations[conversationUserId]) {
-        conversations[conversationUserId] = {
-          userId: conversationUserId,
-          userEmail: message.is_from_admin ? null : message.user_email,
-          messages: []
-        };
-      }
-      
-      // If we don't have the user's email yet, and this is from the user, add it
-      if (!conversations[conversationUserId].userEmail && !message.is_from_admin) {
-        conversations[conversationUserId].userEmail = message.user_email;
-      }
-      
-      conversations[conversationUserId].messages.push(message);
-    }
-    
-    // For admins, return a structured response with conversations
-    if (isUserAdmin) {
-      res.json({
-        conversations: Object.values(conversations),
-        allMessages: result.rows
-      });
-    } else {
-      // For regular users, just return their messages
-      res.json(result.rows);
-    }
-  } catch (error) {
-    console.error('Error fetching help messages:', error);
-    res.status(500).json({ error: 'Failed to fetch help messages' });
-  }
-});
-
-app.post('/api/admin/respond-help', authenticateToken, isAdmin, async (req, res) => {
-  try {
-    const { message, to_user_id } = req.body;
-    const admin_id = req.user.userId;
-    
-    const result = await pool.query(
-      'INSERT INTO help_messages (user_id, to_user_id, message, is_from_admin) VALUES ($1, $2, $3, $4) RETURNING *',
-      [admin_id, to_user_id, message, true]
-    );
-    
-    // Notify the user about admin response
-    io.to(to_user_id).emit('admin_response', result.rows[0]);
-    
-    res.status(201).json(result.rows[0]);
-  } catch (error) {
-    console.error('Error creating admin response:', error);
-    res.status(500).json({ error: 'Failed to send admin response' });
-  }
-});
-
-// Clear all chats and messages
-app.delete('/api/chats/clear-all', authenticateToken, isAdmin, async (req, res) => {
-  try {
-    // First delete all messages
-    await pool.query('DELETE FROM messages');
-    
-    // Then delete all chats
-    await pool.query('DELETE FROM chats');
-    
-    console.log('All chats and messages cleared by admin:', req.user.email);
-    
-    res.status(200).json({ 
-      success: true, 
-      message: 'All chats and messages have been cleared successfully' 
-    });
-  } catch (error) {
-    console.error('Error clearing chats and messages:', error);
-    res.status(500).json({ error: 'Failed to clear chats and messages' });
-  }
-});
-
-// Add endpoint to get admin emails
-app.get('/api/admin/emails', async (req, res) => {
-  try {
-    const adminEmails = getAdminEmails();
-    res.json({ emails: adminEmails });
-  } catch (error) {
-    console.error('Error fetching admin emails:', error);
-    res.status(500).json({ error: 'Failed to fetch admin emails' });
-  }
-});
-
-// Add admin endpoint to manually clean up inactive chats
-app.post('/api/admin/cleanup-chats', authenticateToken, isAdmin, async (req, res) => {
-  try {
-    console.log('Admin-triggered chat cleanup started by:', req.user.email);
-    
-    const result = await cleanupInactiveChats();
-    
-    console.log('Admin-triggered chat cleanup complete:', result);
-    
-    res.json({
-      success: true,
-      message: 'Chat cleanup completed successfully',
-      ...result
-    });
-  } catch (error) {
-    console.error('Error in admin chat cleanup:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to clean up chats',
-      message: error.message
-    });
-  }
-});
-
-// Socket.IO authentication middleware
-io.use((socket, next) => {
-  const token = socket.handshake.auth.token;
-  
-  if (!token) {
-    return next(new Error('Authentication error'));
-  }
-  
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) return next(new Error('Invalid token'));
-    
-    // Add user data to socket
-    socket.user = decoded;
-    
-    // Continue
-    next();
-  });
-});
-
-// Socket.IO event handlers
+// Socket.IO chat event handlers
 io.on('connection', (socket) => {
-  console.log(`Socket connected: ${socket.id} for user ${socket.user.userId}`);
-  
-  // Check if user is admin and join admin room
-  if (checkAdmin(socket.user.email)) {
-    socket.join('admin-room');
-    console.log(`Admin ${socket.user.email} joined admin-room`);
-  }
-  
-  // Join personal room for direct messages
-  socket.join(socket.user.userId);
-  console.log(`User ${socket.user.email} joined personal room ${socket.user.userId}`);
-  
-  // Handle connection errors
-  socket.on('error', (error) => {
-    console.error('Socket error:', error);
-  });
-  
-  // Handle disconnection
-  socket.on('disconnect', (reason) => {
-    console.log(`Socket disconnected: ${socket.id} (${reason})`);
-  });
-  
-  // Handle joining a chat room
+  // ... existing socket connection code ...
+
   socket.on('join_chat', (chatId) => {
     if (!chatId) return;
     
-    const roomName = chatId;
-    console.log(`User ${socket.user.userId} joining room: ${roomName}`);
+    const roomName = `chat_${chatId}`;
+    console.log(`User ${socket.user.userId} joining chat room: ${roomName}`);
     socket.join(roomName);
   });
-  
-  // Handle sending a message
-  socket.on('send_message', async (data) => {
-    try {
-      const { chat_id, message } = data;
-      
-      if (!chat_id || !message) {
-        socket.emit('error', 'Chat ID and message are required');
-        return;
-      }
-      
-      console.log(`Message received from user ${socket.user.userId} in chat ${chat_id}: ${message}`);
-      
-      // Verify the user is a participant in this chat
-      const chatResult = await pool.query(
-        'SELECT * FROM chats WHERE id = $1',
-        [chat_id]
-      );
-      
-      if (chatResult.rows.length === 0) {
-        socket.emit('error', 'Chat not found');
-        return;
-      }
-      
-      const chat = chatResult.rows[0];
-      
-      // Check if user is authorized to send messages in this chat
-      if (chat.buyer_id !== socket.user.userId && chat.seller_id !== socket.user.userId) {
-        socket.emit('error', 'Unauthorized to send messages in this chat');
-        return;
-      }
-      
-      // Insert the message into the database
-      const newMessageResult = await pool.query(
-        'INSERT INTO messages (chat_id, sender_id, message) VALUES ($1, $2, $3) RETURNING *',
-        [chat_id, socket.user.userId, message]
-      );
-      
-      // Get sender email
-      const senderResult = await pool.query(
-        'SELECT email FROM users WHERE id = $1',
-        [socket.user.userId]
-      );
-      
-      // Format the message with sender info
-      const formattedMessage = {
-        ...newMessageResult.rows[0],
-        sender_email: senderResult.rows[0].email,
-        created_at: new Date().toISOString() // Use current time for immediate display
-      };
-      
-      // Broadcast the message to all clients in the room
-      console.log(`Broadcasting message to room: ${chat_id}`);
-      io.to(chat_id).emit('new_message', formattedMessage);
-      
-      // Also emit to the recipient's personal room for unread count
-      const recipientId = chat.buyer_id === socket.user.userId ? chat.seller_id : chat.buyer_id;
-      socket.to(recipientId).emit('unread_message', formattedMessage);
-    } catch (error) {
-      console.error('Error processing message:', error);
-      socket.emit('error', 'Server error processing message');
-    }
+
+  socket.on('leave_chat', (chatId) => {
+    if (!chatId) return;
+    
+    const roomName = `chat_${chatId}`;
+    console.log(`User ${socket.user.userId} leaving chat room: ${roomName}`);
+    socket.leave(roomName);
   });
-  
-  // Handle help messages
-  socket.on('send_help_message', async (data) => {
-    try {
-      const { message } = data;
-      
-      if (!message) {
-        socket.emit('error', 'Message is required');
-        return;
-      }
-      
-      console.log(`Help message received from user ${socket.user.userId} (${socket.user.email}): ${message}`);
-      
-      // Insert the help message into the database
-      const result = await pool.query(
-        'INSERT INTO help_messages (user_id, message, is_from_admin) VALUES ($1, $2, $3) RETURNING *',
-        [socket.user.userId, message, false]
-      );
-      
-      // Get complete user data to include email
-      const newMessage = result.rows[0];
-      
-      // Get the user's email
-      const userResult = await pool.query(
-        'SELECT email FROM users WHERE id = $1',
-        [socket.user.userId]
-      );
-      
-      // Format message with user email
-      const formattedMessage = {
-        ...newMessage,
-        user_email: userResult.rows[0].email
-      };
-      
-      // Notify admins about new help message
-      console.log(`Broadcasting help message to admin room: ${message}`);
-      io.to('admin-room').emit('new_help_message', formattedMessage);
-      
-      // Send confirmation to the user
-      socket.emit('help_message_sent', formattedMessage);
-    } catch (error) {
-      console.error('Error processing help message:', error);
-      socket.emit('error', 'Server error processing help message');
-    }
-  });
-  
-  // Handle admin responses to help messages
-  socket.on('send_admin_response', async (data) => {
-    try {
-      const { message, to_user_id } = data;
-      
-      if (!message || !to_user_id) {
-        socket.emit('error', 'Message and recipient user ID are required');
-        return;
-      }
-      
-      // Verify sender is an admin
-      if (!checkAdmin(socket.user.email)) {
-        socket.emit('error', 'Unauthorized: Only admins can send admin responses');
-        return;
-      }
-      
-      console.log(`Admin response from ${socket.user.email} to user ${to_user_id}: ${message}`);
-      
-      // Insert the admin response into the database
-      const result = await pool.query(
-        'INSERT INTO help_messages (user_id, to_user_id, message, is_from_admin) VALUES ($1, $2, $3, $4) RETURNING *',
-        [socket.user.userId, to_user_id, message, true]
-      );
-      
-      // Get admin email and user email
-      const adminResult = await pool.query('SELECT email FROM users WHERE id = $1', [socket.user.userId]);
-      const userResult = await pool.query('SELECT email FROM users WHERE id = $1', [to_user_id]);
-      
-      // Format response with additional data
-      const formattedResponse = {
-        ...result.rows[0],
-        admin_email: adminResult.rows[0].email,
-        to_user_email: userResult.rows[0].email
-      };
-      
-      // Send the response to the specific user's room
-      console.log(`Emitting admin_response to user ${to_user_id}`);
-      io.to(to_user_id).emit('admin_response', formattedResponse);
-      
-      // Also send to all admins to keep them in sync
-      io.to('admin-room').emit('admin_response_sent', formattedResponse);
-      
-      // Confirm to the sending admin
-      socket.emit('admin_response_confirmed', formattedResponse);
-    } catch (error) {
-      console.error('Error processing admin response:', error);
-      socket.emit('error', 'Server error processing admin response');
-    }
+
+  socket.on('typing', async ({ chatId, isTyping }) => {
+    const chat = await pool.query(
+      'SELECT * FROM chats WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
+      [chatId, socket.user.userId]
+    );
+
+    if (chat.rows.length === 0) return;
+
+    const recipientId = chat.rows[0].buyer_id === socket.user.userId 
+      ? chat.rows[0].seller_id 
+      : chat.rows[0].buyer_id;
+
+    io.to(recipientId).emit('user_typing', {
+      chatId,
+      userId: socket.user.userId,
+      isTyping
+    });
   });
 });
 
@@ -1864,3 +1033,4 @@ process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection:', err);
   process.exit(1);
 }); 
+
