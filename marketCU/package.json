@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "node render-start.js"
+    "start": "vite preview --host --port $PORT"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",

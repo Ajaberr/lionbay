@@ -16,7 +16,7 @@ export const API_BASE_URL = isProduction
 
 // Socket.IO URL - follows the same pattern as API_BASE_URL
 export const SOCKET_URL = isProduction
-  ? '' // Empty string means use the same origin in production
+  ? 'https://lionbay-api.onrender.com' // Your Render backend URL
   : 'http://localhost:3003';
 
 // Debug mode toggle
