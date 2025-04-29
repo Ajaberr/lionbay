@@ -24,12 +24,8 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: import.meta.env.PROD 
-          ? 'https://lionbay-api.onrender.com'
-          : 'http://localhost:3001',
+        target: 'http://localhost:3003',
         changeOrigin: true,
-        secure: true,
-        ws: true
       }
     }
   }

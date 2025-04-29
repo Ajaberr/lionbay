@@ -15,10 +15,8 @@ import SwipeDiscovery from './components/SwipeDiscovery';
 import DiscoverFeature from './components/DiscoverFeature';
 
 // API Base URL Configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 
-  (import.meta.env.PROD ? 'https://lionbay-api.onrender.com/api' : 'http://localhost:3001/api');
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 
-  (import.meta.env.PROD ? 'https://lionbay-api.onrender.com' : 'http://localhost:3001');
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
 
 // Define product categories for consistency
 const PRODUCT_CATEGORIES = [
@@ -1970,25 +1968,11 @@ function AppContent() {
     console.log('Setting up global socket connection for unread messages');
     const token = localStorage.getItem('token');
     const newSocket = io(SOCKET_URL, {
-      auth: { token },
-      transports: ['websocket', 'polling'], // Add fallback transport
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      timeout: 20000
+      auth: { token }
     });
     
     newSocket.on('connect', () => {
       console.log('Socket connected for unread message notifications');
-    });
-    
-    newSocket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error);
-    });
-    
-    newSocket.on('disconnect', (reason) => {
-      console.log('Socket disconnected:', reason);
     });
     
     // Listen for unread messages
@@ -2000,9 +1984,7 @@ function AppContent() {
     setGlobalSocket(newSocket);
     
     return () => {
-      if (newSocket) {
-        newSocket.disconnect();
-      }
+      if (newSocket) newSocket.disconnect();
     };
   }, [isAuthenticated, currentUser, setHasUnreadMessages]);
   
