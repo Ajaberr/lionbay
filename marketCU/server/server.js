@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const { Resend } = require('resend');
 const nodemailer = require('nodemailer');
 const fs = require('fs');
+const path = require('path');
 const { addApiTestEndpoints } = require('./api-test');
 const { cleanupInactiveChats } = require('./chatCleanup');
 
@@ -69,17 +70,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Debug current working directory and paths
 console.log('Current working directory:', process.cwd());
 console.log('__dirname:', __dirname);
-console.log('NODE_ENV:', process.env.NODE_ENV);
 
-// Use the exact build path we confirmed exists for local development
-let distPath = '/Users/abdullahalzahrani/Projects/marketCU/marketCU/dist';
-
-// For Render or other production environments, use a different path
-if (process.env.NODE_ENV === 'production') {
-  distPath = path.join(__dirname, '../dist');
-  console.log('Using production build path:', distPath);
-}
-
+// Use the correct build path for Render
+const distPath = path.join(__dirname, '../dist');
 console.log(`Checking dist path: ${distPath} - exists: ${fs.existsSync(distPath)}`);
 
 if (fs.existsSync(distPath)) {
@@ -98,39 +91,6 @@ if (fs.existsSync(distPath)) {
   console.log('Added catch-all route for SPA navigation');
 } else {
   console.log('WARNING: Frontend build not found at:', distPath);
-  console.log('Attempting alternative dist locations...');
-  
-  // Try alternative dist locations
-  const alternativeDistPaths = [
-    path.join(__dirname, '../dist'),
-    path.join(__dirname, '../../dist'),
-    path.join(process.cwd(), 'dist')
-  ];
-  
-  let found = false;
-  for (const altPath of alternativeDistPaths) {
-    console.log(`Checking alternative path: ${altPath} - exists: ${fs.existsSync(altPath)}`);
-    if (fs.existsSync(altPath)) {
-      console.log('Frontend build found at alternative location:', altPath);
-      app.use(express.static(altPath));
-      
-      // Add a catch-all route for client-side routing
-      app.get('*', (req, res, next) => {
-        // Skip API routes
-        if (req.path.startsWith('/api/')) {
-          return next();
-        }
-        res.sendFile(path.join(altPath, 'index.html'));
-      });
-      
-      found = true;
-      break;
-    }
-  }
-  
-  if (!found) {
-    console.log('WARNING: No frontend build found in any location.');
-  }
 }
 
 // Initialize PostgreSQL pool for connection management
@@ -1731,7 +1691,7 @@ const scheduleCleanup = () => {
 scheduleCleanup();
 
 // Start the server
-const PORT = process.env.PORT || 3003;
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 }); 
