@@ -11,7 +11,7 @@ const isProduction = import.meta.env.PROD;
 // Base API URL - in production this uses the same origin,
 // in development it uses localhost:3003
 export const API_BASE_URL = isProduction 
-  ? '' // Empty string means use the same origin in production
+  ? 'https://lionbay-api.onrender.com' // Your Render backend URL
   : 'http://localhost:3003';
 
 // Socket.IO URL - follows the same pattern as API_BASE_URL
