@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { useCart } from '../App';
 import ToastNotification from './ToastNotification';
+import { buildApiUrl } from '../config';
 import '../styles/SwipeDiscovery.css';
 
 const SwipeDiscovery = () => {
@@ -149,7 +150,7 @@ const SwipeDiscovery = () => {
 
   const getProductImageUrl = (product) => {
     if (!product || !product.image_path) {
-      return "/api/placeholder/300/300";
+      return null;
     }
     return product.image_path;
   };
@@ -321,24 +322,56 @@ const SwipeDiscovery = () => {
       }
       
       // Handle the swipe after animation
-      setTimeout(() => {
-        setSwipedRight(prev => {
-          const newSwipedRight = [...prev, product.id];
-          localStorage.setItem('swipedRight', JSON.stringify(newSwipedRight));
-          return newSwipedRight;
-        });
-        setLastSwipedProduct(product);
-        
-        setCurrentIndex(prev => prev + 1);
-        setIsSwiping(false);
-        
-        // Reset card with smooth transition
-        if (cardRef.current) {
-          cardRef.current.style.transition = 'all 0.3s ease';
-          cardRef.current.style.transform = '';
-          cardRef.current.style.opacity = '1';
-          cardRef.current.style.boxShadow = '0 15px 35px rgba(0, 0, 0, 0.1), 0 3px 10px rgba(0, 0, 0, 0.05)';
-          cardRef.current.style.border = 'none';
+      setTimeout(async () => {
+        try {
+          // Add product to cart
+          const cartApiUrl = 'http://localhost:3001/api/cart';
+          const cartResponse = await fetch(cartApiUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+              product_id: product.id,
+              cart_type: 'CART_ONLY'
+            })
+          });
+
+          if (!cartResponse.ok) {
+            throw new Error(`HTTP error! Status: ${cartResponse.status}`);
+          }
+
+          // Update cart count
+          if (updateCartCount) {
+            updateCartCount();
+          }
+
+          setSwipedRight(prev => {
+            const newSwipedRight = [...prev, product.id];
+            localStorage.setItem('swipedRight', JSON.stringify(newSwipedRight));
+            return newSwipedRight;
+          });
+          setLastSwipedProduct(product);
+          setShowActionToast(true);
+          
+          setCurrentIndex(prev => prev + 1);
+          setIsSwiping(false);
+          
+          // Reset card with smooth transition
+          if (cardRef.current) {
+            cardRef.current.style.transition = 'all 0.3s ease';
+            cardRef.current.style.transform = '';
+            cardRef.current.style.opacity = '1';
+            cardRef.current.style.boxShadow = '0 15px 35px rgba(0, 0, 0, 0.1), 0 3px 10px rgba(0, 0, 0, 0.05)';
+            cardRef.current.style.border = 'none';
+          }
+        } catch (err) {
+          console.error('Error adding to cart:', err);
+          setToastMessage('Failed to add product to cart. Please try again.');
+          setToastType('error');
+          setShowToast(true);
+          setIsSwiping(false);
         }
       }, 600);
     }
@@ -486,9 +519,8 @@ const SwipeDiscovery = () => {
   };
   
   const handleContactSeller = async () => {
-    if (!isAuthenticated || !lastSwipedProduct) {
-      setShowActionToast(false);
-      return;
+    if (!isAuthenticated) {
+      return; // This will be handled by protectedAction
     }
 
     try {
@@ -502,7 +534,7 @@ const SwipeDiscovery = () => {
       }
       
       // Create or get chat for this product
-      const chatApiUrl = 'http://localhost:3001/api/chats';
+      const chatApiUrl = buildApiUrl('/chats');
       console.log("Creating chat for product:", lastSwipedProduct.id);
       
       const chatResponse = await fetch(chatApiUrl, {
@@ -524,7 +556,7 @@ const SwipeDiscovery = () => {
       const chatData = await chatResponse.json();
       
       // First get cart items to find the one with this product
-      const cartApiUrl = 'http://localhost:3001/api/cart';
+      const cartApiUrl = buildApiUrl('/cart');
       const cartResponse = await fetch(cartApiUrl, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -540,7 +572,7 @@ const SwipeDiscovery = () => {
       
       if (cartItem) {
         // Update the cart item to CONTACTED type
-        const updateCartUrl = `http://localhost:3001/api/cart/${cartItem.id}`;
+        const updateCartUrl = buildApiUrl(`/cart/${cartItem.id}`);
         const updateResponse = await fetch(updateCartUrl, {
           method: 'PUT',
           headers: {
@@ -597,31 +629,31 @@ const SwipeDiscovery = () => {
   };
 
   const getCategoryPlaceholder = (category) => {
-    // Map product categories to specific placeholder images using Unsplash
-    const categoryImages = {
-      'Electronics': 'https://source.unsplash.com/random/800x600/?electronics',
-      'Clothing': 'https://source.unsplash.com/random/800x600/?clothing',
-      'Books': 'https://source.unsplash.com/random/800x600/?books',
-      'Furniture': 'https://source.unsplash.com/random/800x600/?furniture',
-      'Home Goods': 'https://source.unsplash.com/random/800x600/?home',
-      'Kitchen': 'https://source.unsplash.com/random/800x600/?kitchen',
-      'Sports': 'https://source.unsplash.com/random/800x600/?sports',
-      'Hobbies': 'https://source.unsplash.com/random/800x600/?hobby',
-      'Musical Instruments': 'https://source.unsplash.com/random/800x600/?music',
-      'Art Supplies': 'https://source.unsplash.com/random/800x600/?art',
-      'Outdoor Gear': 'https://source.unsplash.com/random/800x600/?outdoor',
-      'Collectibles': 'https://source.unsplash.com/random/800x600/?collectible',
-      'Accessories': 'https://source.unsplash.com/random/800x600/?accessories',
-      'Bags': 'https://source.unsplash.com/random/800x600/?bag',
-      'Games': 'https://source.unsplash.com/random/800x600/?games',
-      'Stationery': 'https://source.unsplash.com/random/800x600/?stationery',
-      'Home Decor': 'https://source.unsplash.com/random/800x600/?decor',
-      'Home & Garden': 'https://source.unsplash.com/random/800x600/?garden',
-      'Music': 'https://source.unsplash.com/random/800x600/?music'
+    // Map product categories to specific background colors
+    const categoryColors = {
+      'Electronics': '#e6f3ff',
+      'Clothing': '#ffe6e6',
+      'Books': '#f0e6ff',
+      'Furniture': '#e6ffe6',
+      'Home Goods': '#fff0e6',
+      'Kitchen': '#ffe6f3',
+      'Sports': '#e6fff0',
+      'Hobbies': '#f3ffe6',
+      'Musical Instruments': '#e6e6ff',
+      'Art Supplies': '#ffe6ff',
+      'Outdoor Gear': '#e6fff3',
+      'Collectibles': '#fff3e6',
+      'Accessories': '#f3e6ff',
+      'Bags': '#e6ffec',
+      'Games': '#ffe6ec',
+      'Stationery': '#e6f0ff',
+      'Home Decor': '#ffe6e0',
+      'Home & Garden': '#e0ffe6',
+      'Music': '#e6e0ff'
     };
     
-    // If category exists in our mapping, use it, otherwise use a generic product image
-    return categoryImages[category] || `https://source.unsplash.com/random/800x600/?${category.toLowerCase()}` || 'https://source.unsplash.com/random/800x600/?product';
+    // If category exists in our mapping, use it, otherwise use a default color
+    return categoryColors[category] || '#f3f4f6';
   };
 
   // Preload the next few product images for smoother experience
@@ -720,16 +752,22 @@ const SwipeDiscovery = () => {
                     <div className="loading-spinner"></div>
                   </div>
                 )}
-                <img 
-                  src={getProductImageUrl(products[currentIndex])}
-                  alt={products[currentIndex].name}
-                  onLoad={() => setImageLoading(false)}
-                  onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = "/api/placeholder/300/300";
-                    setImageLoading(false);
-                  }}
-                />
+                {getProductImageUrl(products[currentIndex]) ? (
+                  <img 
+                    src={getProductImageUrl(products[currentIndex])}
+                    alt={products[currentIndex].name}
+                    onLoad={() => setImageLoading(false)}
+                    onError={() => setImageLoading(false)}
+                  />
+                ) : (
+                  <div 
+                    className="no-image-placeholder"
+                    style={{ '--category-color': getCategoryPlaceholder(products[currentIndex].category) }}
+                  >
+                    <i className="fas fa-image"></i>
+                    <span>No Image Available</span>
+                  </div>
+                )}
               </div>
               <div className="swipe-product-details">
                 <h3 className="swipe-product-title">{products[currentIndex].name}</h3>

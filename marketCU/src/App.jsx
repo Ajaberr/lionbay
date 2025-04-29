@@ -30,6 +30,32 @@ const PRODUCT_CATEGORIES = [
   "School Supplies"
 ];
 
+// Category color mapping
+const getCategoryPlaceholder = (category) => {
+  const colors = {
+    'electronics': '#4CAF50',
+    'clothing': '#2196F3',
+    'books': '#FF9800',
+    'furniture': '#9C27B0',
+    'other': '#607D8B',
+    'default': '#607D8B'
+  };
+  return colors[category?.toLowerCase()] || colors.default;
+};
+
+// Image rendering helper
+const renderProductImage = (product, size = 'medium') => {
+  if (product.image_path) {
+    return <img src={product.image_path} alt={product.name} />;
+  }
+  return (
+    <div className="no-image-placeholder" style={{ '--category-color': getCategoryPlaceholder(product.category) }}>
+      <i className="fas fa-image"></i>
+      <span>No Image</span>
+    </div>
+  );
+};
+
 // Create Auth Context
 const AuthContext = createContext();
 
@@ -253,16 +279,12 @@ export function MessagesProvider({ children }) {
   const { authAxios, isAuthenticated } = useAuth();
   
   const checkUnreadMessages = async () => {
-    if (!isAuthenticated) return;
-    
     try {
       const response = await authAxios.get('/chats/has-unread');
-      
-      if (response.data && response.data.hasUnread !== undefined) {
-        setHasUnread(response.data.hasUnread);
-      }
+      setHasUnread(response.data.hasUnread);
     } catch (error) {
       console.error('Error checking unread messages:', error);
+      // Don't set hasUnreadMessages to false on error to avoid UI flicker
     }
   };
 
@@ -858,7 +880,7 @@ function MarketPage() {
                   <Link key={product.id} to={`/market/${product.id}`} className="product-card-link">
                     <div className="product-card">
                       <div className="product-image">
-                        <img src={product.image_path || "/api/placeholder/300/300"} alt={product.name} />
+                        {renderProductImage(product)}
                       </div>
                       <div className="product-details">
                         <div className="product-title">{product.name}</div>
@@ -1040,11 +1062,7 @@ function ProductDetailPage() {
     <div className="product-detail-page">
       <div className="product-detail-container">
         <div className="product-detail-left">
-          <img 
-            src={product.image_path || "/api/placeholder/600/400"} 
-            alt={product.name} 
-            className="product-detail-image"
-          />
+          {renderProductImage(product)}
         </div>
         <div className="product-detail-right">
           <h1 className="product-detail-title">{product.name}</h1>
@@ -1126,43 +1144,45 @@ function CreateProductPage() {
 
   const validateImageUrl = async (url) => {
     try {
-      const response = await fetch(url);
-      const contentType = response.headers.get('content-type');
-      
-      // Check if it's an image
-      if (!contentType.startsWith('image/')) {
-        return false;
+      // Check if URL is valid
+      if (!url.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) && 
+          !url.startsWith('data:image/')) {
+        return { valid: false, error: 'Invalid image format. Please provide a valid image URL or upload an image.' };
       }
 
-      // Check content length (max 5MB)
-      const contentLength = response.headers.get('content-length');
-      if (contentLength && parseInt(contentLength) > 5 * 1024 * 1024) {
-        setImageError('Image size must be less than 5MB');
-        return false;
+      // For URLs, check if the image exists and is accessible
+      if (url.startsWith('http')) {
+        const response = await fetch(url, { method: 'HEAD' });
+        if (!response.ok) {
+          return { valid: false, error: 'Image URL is not accessible. Please check the URL and try again.' };
+        }
+        
+        // Check content type
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.startsWith('image/')) {
+          return { valid: false, error: 'URL does not point to a valid image file.' };
+        }
+        
+        // Check file size (5MB limit)
+        const contentLength = response.headers.get('content-length');
+        if (contentLength && parseInt(contentLength) > 5 * 1024 * 1024) {
+          return { valid: false, error: 'Image size exceeds 5MB limit.' };
+        }
       }
 
-      // Create an image object to check dimensions
-      const img = new Image();
-      return new Promise((resolve) => {
-        img.onload = () => {
-          const maxWidth = 2000;
-          const maxHeight = 2000;
-          if (img.width > maxWidth || img.height > maxHeight) {
-            setImageError(`Image dimensions must be less than ${maxWidth}x${maxHeight} pixels`);
-            resolve(false);
-          } else {
-            resolve(true);
-          }
-        };
-        img.onerror = () => {
-          setImageError('Failed to load image. Please try another URL.');
-          resolve(false);
-        };
-        img.src = url;
-      });
-    } catch {
-      setImageError('Invalid image URL or failed to load image');
-      return false;
+      // For base64 data URLs, check size
+      if (url.startsWith('data:image/')) {
+        const base64Data = url.split(',')[1];
+        const sizeInBytes = Math.ceil((base64Data.length * 3) / 4);
+        if (sizeInBytes > 5 * 1024 * 1024) {
+          return { valid: false, error: 'Image size exceeds 5MB limit.' };
+        }
+      }
+
+      return { valid: true };
+    } catch (error) {
+      console.error('Error validating image:', error);
+      return { valid: false, error: 'Error validating image. Please try again.' };
     }
   };
 
@@ -1240,8 +1260,8 @@ function CreateProductPage() {
       // Validate image URL if provided and using URL method
       if (uploadMethod === 'url' && formData.image_path) {
         const isValidImage = await validateImageUrl(formData.image_path);
-        if (!isValidImage) {
-          setImageError('Please provide a valid image URL');
+        if (!isValidImage.valid) {
+          setImageError(isValidImage.error);
           setIsSubmitting(false);
           return;
         }
@@ -1507,10 +1527,7 @@ function ChatsListPage() {
             return (
               <Link to={`/chats/${chat.id}`} key={chat.id} className={`chat-item ${isSeller ? 'seller-chat' : 'buyer-chat'}`}>
               <div className="chat-item-image">
-                <img 
-                    src={chat.product_image || "/api/placeholder/150/150"} 
-                    alt={chat.product_name || "Product"} 
-                />
+                {renderProductImage(chat, 'small')}
               </div>
               <div className="chat-item-details">
                   <div className="chat-role-indicator">
@@ -2039,8 +2056,49 @@ function AppContent() {
 function SiteFooter() {
   return (
     <footer className="site-footer">
+      <div className="footer-container">
+        <div className="footer-section">
+          <h3>Lion Bay</h3>
+          <p>The marketplace where you can actually get stuff before the semester ends. You heard!</p>
+        </div>
+        
+        <div className="footer-section">
+          <h3>Quick Links</h3>
+          <ul>
+            <li><Link to="/home">Home</Link></li>
+            <li><Link to="/market">Explore Stuff</Link></li>
+            <li><Link to="/create-product">Sell Your Stuff</Link></li>
+          </ul>
+        </div>
+        
+        <div className="footer-section">
+          <h3>Find Your Way</h3>
+          <div className="site-map">
+            <div className="site-map-item">
+              <span className="site-map-icon"><i className="fas fa-home"></i></span>
+              <Link to="/home">Home</Link>
+            </div>
+            <div className="site-map-item">
+              <span className="site-map-icon"><i className="fas fa-shopping-cart"></i></span>
+              <Link to="/market">Find Things</Link>
+            </div>
+            <div className="site-map-item">
+              <span className="site-map-icon"><i className="fas fa-plus"></i></span>
+              <Link to="/create-product">Sell Things</Link>
+            </div>
+            <div className="site-map-item">
+              <span className="site-map-icon"><i className="fas fa-comment"></i></span>
+              <Link to="/chats">Slide in DMs</Link>
+            </div>
+            <div className="site-map-item">
+              <span className="site-map-icon"><i className="fas fa-user"></i></span>
+              <span className="coming-soon">Profile <span className="coming-soon-badge">Coming Soon</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
       <div className="footer-bottom">
-        <p>&copy; {new Date().getFullYear()} Lion Bay</p>
+        <p>&copy; {new Date().getFullYear()} Lion Bay. Better, faster, closer than those other guys.</p>
       </div>
     </footer>
   );
@@ -2198,10 +2256,7 @@ function CartPage() {
                   {contactedItems.map(item => (
                     <div key={item.id} className="cart-item">
                       <div className="cart-item-image">
-                        <img 
-                          src={item.product_image || "/api/placeholder/150/150"} 
-                          alt={item.product_name || "Product"} 
-                        />
+                        {renderProductImage(item, 'small')}
                       </div>
                       <div className="cart-item-details">
                         <h3 className="cart-item-title">{item.product_name || "Unknown Product"}</h3>
@@ -2236,10 +2291,7 @@ function CartPage() {
                   {cartOnlyItems.map(item => (
                     <div key={item.id} className="cart-item">
                       <div className="cart-item-image">
-                        <img 
-                          src={item.product_image || "/api/placeholder/150/150"} 
-                          alt={item.product_name || "Product"} 
-                        />
+                        {renderProductImage(item, 'small')}
                       </div>
                       <div className="cart-item-details">
                         <h3 className="cart-item-title">{item.product_name || "Unknown Product"}</h3>
@@ -2856,10 +2908,7 @@ function ProductManagementPage() {
               products.map(product => (
                 <div key={product.id} className="product-management-item">
                   <div className="product-management-image">
-                    <img 
-                      src={product.image_path || "/api/placeholder/150/150"} 
-                      alt={product.name} 
-                    />
+                    {renderProductImage(product)}
                   </div>
                   <div className="product-management-details">
                     <h3>{product.name}</h3>

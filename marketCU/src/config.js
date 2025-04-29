@@ -38,11 +38,9 @@ export const logger = {
   error: (...args) => console.error('[ERROR]', ...args),
 };
 
-// Function to build a complete API URL
-export const buildApiUrl = (endpoint) => {
-  // Ensure endpoint starts with a slash
-  const formattedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  return `${API_BASE_URL}/api${formattedEndpoint}`;
+// Helper function to build API URLs
+export const buildApiUrl = (path) => {
+  return `${API_BASE_URL}${path}`;
 };
 
 export default {

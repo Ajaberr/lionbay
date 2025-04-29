@@ -540,6 +540,17 @@ app.post('/api/products', authenticateToken, async (req, res) => {
   try {
     const { name, details, price, condition, category, image_path } = req.body;
     
+    // Validate required fields
+    if (!name || !details || !price || !condition || !category || !image_path) {
+      return res.status(400).json({ error: 'All fields including image are required' });
+    }
+
+    // Validate image URL format
+    if (!image_path.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) && 
+        !image_path.startsWith('data:image/')) {
+      return res.status(400).json({ error: 'Invalid image format. Please provide a valid image URL or base64 data' });
+    }
+    
     const result = await pool.query(
       'INSERT INTO products (seller_id, name, details, price, condition, category, image_path) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
       [req.user.userId, name, details, price, condition, category, image_path]
@@ -575,6 +586,17 @@ app.put('/api/products/:id', authenticateToken, async (req, res) => {
   try {
     const productId = req.params.id;
     const { name, details, price, condition, category, image_path } = req.body;
+    
+    // Validate required fields
+    if (!name || !details || !price || !condition || !category || !image_path) {
+      return res.status(400).json({ error: 'All fields including image are required' });
+    }
+
+    // Validate image URL format
+    if (!image_path.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) && 
+        !image_path.startsWith('data:image/')) {
+      return res.status(400).json({ error: 'Invalid image format. Please provide a valid image URL or base64 data' });
+    }
     
     // First check if product exists and user is the seller
     const productCheck = await pool.query(

@@ -31,7 +31,11 @@ async function addColumn() {
   }
 }
 
-// Run the function
+// Run the script
 addColumn().then(success => {
-  console.log('Operation completed with success =', success);
+  if (success) {
+    console.log('✅ Successfully added is_read column to messages table');
+  } else {
+    console.error('❌ Failed to add is_read column to messages table');
+  }
 }); 

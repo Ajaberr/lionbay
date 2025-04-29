@@ -4,7 +4,7 @@ import axios from 'axios';
 import './LoginPage.css';
 
 // API Base URL Configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3003/api';
 
 function LoginPage({ setIsAuthenticated }) {
   const [email, setEmail] = useState('');
@@ -26,11 +26,15 @@ function LoginPage({ setIsAuthenticated }) {
     setErrorMessage('');
     
     try {
-      await axios.post(`${API_BASE_URL}/auth/verify-email`, { email });
-      setCodeSent(true);
-      setErrorMessage('');
+      const response = await axios.post(`${API_BASE_URL}/auth/verify-email`, { email });
+      if (response.data.success) {
+        setCodeSent(true);
+        setErrorMessage('');
+      } else {
+        setErrorMessage(response.data.message || 'Failed to send verification code');
+      }
     } catch (error) {
-      setErrorMessage(error.response?.data?.message || error.response?.data?.error || 'Failed to send verification code');
+      setErrorMessage(error.response?.data?.message || error.response?.data?.error || 'Failed to send verification code. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -48,12 +52,16 @@ function LoginPage({ setIsAuthenticated }) {
         code: verificationCode 
       });
       
-      localStorage.setItem('token', response.data.token);
-      localStorage.setItem('userId', response.data.userId);
-      setIsAuthenticated(true);
-      navigate('/market');
+      if (response.data.token && response.data.userId) {
+        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('userId', response.data.userId);
+        setIsAuthenticated(true);
+        navigate('/market');
+      } else {
+        setErrorMessage('Invalid response from server. Please try again.');
+      }
     } catch (error) {
-      setErrorMessage(error.response?.data?.error || 'Invalid or expired verification code');
+      setErrorMessage(error.response?.data?.error || 'Invalid or expired verification code. Please try again.');
     } finally {
       setLoading(false);
     }
