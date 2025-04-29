@@ -2,10 +2,19 @@
 const path = require('path');
 const dotenv = require('dotenv');
 
-// 1) Load .env in this folder (marketCU/server/.env) if it exists
+// Load environment variables in order of precedence:
+// 1) Load .env.render in project root if it exists (highest priority)
+dotenv.config({ path: path.join(__dirname, '..', '..', '.env.render') });
+// 2) Load .env in this folder (marketCU/server/.env)
 dotenv.config({ path: path.join(__dirname, '.env') });
-// 2) Load project-root .env two levels up (../..) without overriding already-set vars
+// 3) Load project-root .env (lowest priority)
 dotenv.config({ path: path.join(__dirname, '..', '..', '.env'), override: false });
+
+// Debug environment loading
+console.log('Environment files loaded:');
+console.log('1. .env.render:', fs.existsSync(path.join(__dirname, '..', '..', '.env.render')));
+console.log('2. server/.env:', fs.existsSync(path.join(__dirname, '.env')));
+console.log('3. root/.env:', fs.existsSync(path.join(__dirname, '..', '..', '.env')));
 
 // For backward compatibility, retain default behaviour too (will be a no-op now)
 // require('dotenv').config();
