@@ -1,24 +1,4 @@
-// Load environment variables from .env files
-const path = require('path');
-const dotenv = require('dotenv');
-
-// Load environment variables in order of precedence:
-// 1) Load .env.render in project root if it exists (highest priority)
-dotenv.config({ path: path.join(__dirname, '..', '..', '.env.render') });
-// 2) Load .env in this folder (marketCU/server/.env)
-dotenv.config({ path: path.join(__dirname, '.env') });
-// 3) Load project-root .env (lowest priority)
-dotenv.config({ path: path.join(__dirname, '..', '..', '.env'), override: false });
-
-// Debug environment loading
-console.log('Environment files loaded:');
-console.log('1. .env.render:', fs.existsSync(path.join(__dirname, '..', '..', '.env.render')));
-console.log('2. server/.env:', fs.existsSync(path.join(__dirname, '.env')));
-console.log('3. root/.env:', fs.existsSync(path.join(__dirname, '..', '..', '.env')));
-
-// For backward compatibility, retain default behaviour too (will be a no-op now)
-// require('dotenv').config();
-
+// Load environment variables from Render
 const express = require('express');
 const cors = require('cors');
 const { Client, Pool } = require('pg');
@@ -33,6 +13,17 @@ const { cleanupInactiveChats } = require('./chatCleanup');
 
 const app = express();
 const server = http.createServer(app);
+
+// Debug environment variables
+console.log('Environment variables loaded from Render:');
+console.log('PORT:', process.env.PORT);
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'Configured' : 'Missing');
+console.log('JWT_SECRET:', process.env.JWT_SECRET ? 'Configured' : 'Missing');
+console.log('EMAIL_USER:', process.env.EMAIL_USER ? 'Configured' : 'Missing');
+console.log('EMAIL_PASSWORD:', process.env.EMAIL_PASSWORD ? 'Configured' : 'Missing');
+console.log('FRONTEND_URL:', process.env.FRONTEND_URL || 'Not configured');
+console.log('ADMIN_EMAILS:', process.env.ADMIN_EMAILS ? 'Configured' : 'Missing');
 
 // Improved CORS configuration to handle both local and production environments
 const allowedOrigins = [
