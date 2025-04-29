@@ -1,4 +1,4 @@
-import { useState, useContext, createContext, useEffect, useRef, Fragment } from 'react';
+import { useState, useContext, createContext, useEffect, useRef, Fragment as Fragment2 } from 'react';
 import { BrowserRouter as Router, Route, Routes, Link, Navigate, useParams, useNavigate } from 'react-router-dom';
 import './App.css';
 import './Chat.css';
@@ -29,32 +29,6 @@ const PRODUCT_CATEGORIES = [
   "Clothing & Fashion",
   "School Supplies"
 ];
-
-// Category color mapping
-const getCategoryPlaceholder = (category) => {
-  const colors = {
-    'electronics': '#4CAF50',
-    'clothing': '#2196F3',
-    'books': '#FF9800',
-    'furniture': '#9C27B0',
-    'other': '#607D8B',
-    'default': '#607D8B'
-  };
-  return colors[category?.toLowerCase()] || colors.default;
-};
-
-// Image rendering helper
-const renderProductImage = (product, size = 'medium') => {
-  if (product.image_path) {
-    return <img src={product.image_path} alt={product.name} />;
-  }
-  return (
-    <div className="no-image-placeholder" style={{ '--category-color': getCategoryPlaceholder(product.category) }}>
-      <i className="fas fa-image"></i>
-      <span>No Image</span>
-    </div>
-  );
-};
 
 // Create Auth Context
 const AuthContext = createContext();
@@ -279,12 +253,16 @@ export function MessagesProvider({ children }) {
   const { authAxios, isAuthenticated } = useAuth();
   
   const checkUnreadMessages = async () => {
+    if (!isAuthenticated) return;
+    
     try {
       const response = await authAxios.get('/chats/has-unread');
-      setHasUnread(response.data.hasUnread);
+      
+      if (response.data && response.data.hasUnread !== undefined) {
+        setHasUnread(response.data.hasUnread);
+      }
     } catch (error) {
       console.error('Error checking unread messages:', error);
-      // Don't set hasUnreadMessages to false on error to avoid UI flicker
     }
   };
 
@@ -418,7 +396,7 @@ export function HeadBar() {
             <button className="sign-in-btn" onClick={logout}>logout</button>
             
             {/* Mobile menu toggle button */}
-            {windowWidth <= 768 && (
+            {windowWidth <= 1160 && (
               <button className="mobile-menu-toggle" onClick={toggleSidebar} aria-label="Open menu">
                 <i className="fas fa-bars menu-icon"></i>
               </button>
@@ -430,7 +408,7 @@ export function HeadBar() {
             <Link to="/login" className="login-btn">login</Link>
             
             {/* Mobile menu toggle button */}
-            {windowWidth <= 768 && (
+            {windowWidth <= 1160 && (
               <button className="mobile-menu-toggle" onClick={toggleSidebar} aria-label="Open menu">
                 <i className="fas fa-bars menu-icon"></i>
               </button>
@@ -880,7 +858,7 @@ function MarketPage() {
                   <Link key={product.id} to={`/market/${product.id}`} className="product-card-link">
                     <div className="product-card">
                       <div className="product-image">
-                        {renderProductImage(product)}
+                        <img src={product.image_path || "/api/placeholder/300/300"} alt={product.name} />
                       </div>
                       <div className="product-details">
                         <div className="product-title">{product.name}</div>
@@ -1062,7 +1040,11 @@ function ProductDetailPage() {
     <div className="product-detail-page">
       <div className="product-detail-container">
         <div className="product-detail-left">
-          {renderProductImage(product)}
+          <img 
+            src={product.image_path || "/api/placeholder/600/400"} 
+            alt={product.name} 
+            className="product-detail-image"
+          />
         </div>
         <div className="product-detail-right">
           <h1 className="product-detail-title">{product.name}</h1>
@@ -1527,7 +1509,10 @@ function ChatsListPage() {
             return (
               <Link to={`/chats/${chat.id}`} key={chat.id} className={`chat-item ${isSeller ? 'seller-chat' : 'buyer-chat'}`}>
               <div className="chat-item-image">
-                {renderProductImage(chat, 'small')}
+                <img 
+                    src={chat.product_image || "/api/placeholder/150/150"} 
+                    alt={chat.product_name || "Product"} 
+                />
               </div>
               <div className="chat-item-details">
                   <div className="chat-role-indicator">
@@ -2104,8 +2089,9 @@ function SiteFooter() {
   );
 }
 
+
 function CartPage() {
-  const { authAxios, isAuthenticated, currentUser } = useAuth();
+  const { authAxios, isAuthenticated, currentUser } = useAuth();S
   const { updateCartCount } = useCart();
   const { updateUnreadCount } = useMessages();
   const { protectedAction, renderToast } = useProtectedInteraction();
@@ -2256,7 +2242,10 @@ function CartPage() {
                   {contactedItems.map(item => (
                     <div key={item.id} className="cart-item">
                       <div className="cart-item-image">
-                        {renderProductImage(item, 'small')}
+                        <img 
+                          src={item.product_image || "/api/placeholder/150/150"} 
+                          alt={item.product_name || "Product"} 
+                        />
                       </div>
                       <div className="cart-item-details">
                         <h3 className="cart-item-title">{item.product_name || "Unknown Product"}</h3>
@@ -2291,7 +2280,10 @@ function CartPage() {
                   {cartOnlyItems.map(item => (
                     <div key={item.id} className="cart-item">
                       <div className="cart-item-image">
-                        {renderProductImage(item, 'small')}
+                        <img 
+                          src={item.product_image || "/api/placeholder/150/150"} 
+                          alt={item.product_name || "Product"} 
+                        />
                       </div>
                       <div className="cart-item-details">
                         <h3 className="cart-item-title">{item.product_name || "Unknown Product"}</h3>
@@ -2908,7 +2900,10 @@ function ProductManagementPage() {
               products.map(product => (
                 <div key={product.id} className="product-management-item">
                   <div className="product-management-image">
-                    {renderProductImage(product)}
+                    <img 
+                      src={product.image_path || "/api/placeholder/150/150"} 
+                      alt={product.name} 
+                    />
                   </div>
                   <div className="product-management-details">
                     <h3>{product.name}</h3>
@@ -2947,10 +2942,6 @@ function ProductManagementPage() {
           message={toastMessage}
           type={toastType}
           onClose={() => setShowToast(false)}
-
-
-
-          
         />
       )}
     </div>
