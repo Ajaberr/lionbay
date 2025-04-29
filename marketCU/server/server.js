@@ -15,15 +15,23 @@ const { cleanupInactiveChats } = require('./chatCleanup');
 const app = express();
 const server = http.createServer(app);
 
-// Debug environment variables
-console.log('Environment variables loaded from Render:');
+// Debug Render environment variables
+console.log('Render Environment Variables:');
+console.log('RENDER:', process.env.RENDER);
+console.log('RENDER_EXTERNAL_URL:', process.env.RENDER_EXTERNAL_URL);
+console.log('RENDER_SERVICE_NAME:', process.env.RENDER_SERVICE_NAME);
+console.log('RENDER_SERVICE_TYPE:', process.env.RENDER_SERVICE_TYPE);
+console.log('RENDER_INSTANCE_ID:', process.env.RENDER_INSTANCE_ID);
+
+// Debug application environment variables
+console.log('Application Environment Variables:');
 console.log('PORT:', process.env.PORT);
 console.log('NODE_ENV:', process.env.NODE_ENV);
 console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'Configured' : 'Missing');
 console.log('JWT_SECRET:', process.env.JWT_SECRET ? 'Configured' : 'Missing');
 console.log('EMAIL_USER:', process.env.EMAIL_USER ? 'Configured' : 'Missing');
 console.log('EMAIL_PASSWORD:', process.env.EMAIL_PASSWORD ? 'Configured' : 'Missing');
-console.log('FRONTEND_URL:', process.env.FRONTEND_URL || 'Not configured');
+console.log('FRONTEND_URL:', process.env.FRONTEND_URL || process.env.RENDER_EXTERNAL_URL);
 console.log('ADMIN_EMAILS:', process.env.ADMIN_EMAILS ? 'Configured' : 'Missing');
 
 // Improved CORS configuration to handle both local and production environments
@@ -33,6 +41,7 @@ const allowedOrigins = [
   'http://localhost:3003',
   'https://lionbay-api.onrender.com',
   'https://lionbay.com',
+  process.env.RENDER_EXTERNAL_URL,
   process.env.FRONTEND_URL
 ].filter(Boolean); // Remove any undefined values
 
@@ -61,7 +70,11 @@ const io = new Server(server, {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
     credentials: true
-  }
+  },
+  transports: ['websocket', 'polling'],
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  connectTimeout: 20000
 });
 
 app.use(express.json({ limit: '50mb' }));
@@ -72,7 +85,7 @@ console.log('Current working directory:', process.cwd());
 console.log('__dirname:', __dirname);
 
 // Use the correct build path for Render
-const distPath = path.join(__dirname, '../dist');
+const distPath = path.join(process.cwd(), 'dist');
 console.log(`Checking dist path: ${distPath} - exists: ${fs.existsSync(distPath)}`);
 
 if (fs.existsSync(distPath)) {
@@ -773,8 +786,22 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
   }
 });
 
+// Helper function to validate UUID
+const isValidUUID = (uuid) => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(uuid);
+};
+
+// Update chat endpoints to use UUID validation
 app.get('/api/chats/:id', authenticateToken, async (req, res) => {
   try {
+    const chatId = req.params.id;
+    
+    // Validate chat ID is a valid UUID
+    if (!isValidUUID(chatId)) {
+      return res.status(400).json({ error: 'Invalid chat ID format' });
+    }
+    
     const chatResult = await pool.query(
       `SELECT c.*, 
         p.name as product_name, p.image_path as product_image,
@@ -784,7 +811,7 @@ app.get('/api/chats/:id', authenticateToken, async (req, res) => {
       JOIN users u1 ON c.buyer_id = u1.id
       JOIN users u2 ON c.seller_id = u2.id
       WHERE c.id = $1`,
-      [req.params.id]
+      [chatId]
     );
     
     if (chatResult.rows.length === 0) {
@@ -805,9 +832,59 @@ app.get('/api/chats/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Update mark-read endpoint
+app.post('/api/chats/:id/mark-read', authenticateToken, async (req, res) => {
+  try {
+    const chatId = req.params.id;
+    
+    // Validate chat ID is a valid UUID
+    if (!isValidUUID(chatId)) {
+      return res.status(400).json({ error: 'Invalid chat ID format' });
+    }
+    
+    const userId = req.user.userId;
+    
+    // Verify user has access to chat
+    const chatResult = await pool.query(
+      'SELECT * FROM chats WHERE id = $1',
+      [chatId]
+    );
+    
+    if (chatResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+    
+    const chat = chatResult.rows[0];
+    
+    // Ensure user is authorized to access this chat
+    if (chat.buyer_id !== userId && chat.seller_id !== userId) {
+      return res.status(403).json({ error: 'Unauthorized access to chat' });
+    }
+    
+    // Mark messages from other users as read
+    await pool.query(
+      `UPDATE messages 
+      SET is_read = true 
+      WHERE chat_id = $1 AND sender_id != $2 AND is_read = false`,
+      [chatId, userId]
+    );
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error marking messages as read:', error);
+    res.status(500).json({ error: 'Failed to mark messages as read' });
+  }
+});
+
+// Update messages endpoint
 app.get('/api/chats/:id/messages', authenticateToken, async (req, res) => {
   try {
     const chatId = req.params.id;
+    
+    // Validate chat ID is a valid UUID
+    if (!isValidUUID(chatId)) {
+      return res.status(400).json({ error: 'Invalid chat ID format' });
+    }
     
     // Verify user has access to chat
     const chatResult = await pool.query(
@@ -1422,6 +1499,16 @@ io.on('connection', (socket) => {
   socket.join(socket.user.userId);
   console.log(`User ${socket.user.email} joined personal room ${socket.user.userId}`);
   
+  // Handle connection errors
+  socket.on('error', (error) => {
+    console.error('Socket error:', error);
+  });
+  
+  // Handle disconnection
+  socket.on('disconnect', (reason) => {
+    console.log(`Socket disconnected: ${socket.id} (${reason})`);
+  });
+  
   // Handle joining a chat room
   socket.on('join_chat', (chatId) => {
     if (!chatId) return;
@@ -1588,11 +1675,6 @@ io.on('connection', (socket) => {
       socket.emit('error', 'Server error processing admin response');
     }
   });
-  
-  // Handle disconnection
-  socket.on('disconnect', () => {
-    console.log(`Socket disconnected: ${socket.id}`);
-  });
 });
 
 // Catch-all route to serve index.html for client-side routing
@@ -1691,7 +1773,7 @@ const scheduleCleanup = () => {
 scheduleCleanup();
 
 // Start the server
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 10000; // Use Render's default port
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 }); 
