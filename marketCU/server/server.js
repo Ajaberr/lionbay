@@ -16,10 +16,7 @@ const { Client, Pool } = require('pg');
 const http = require('http');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
-const { Resend } = require('resend');
-const nodemailer = require('nodemailer');
 const fs = require('fs');
-const { addApiTestEndpoints } = require('./api-test');
 const { cleanupInactiveChats } = require('./chatCleanup');
 
 const app = express();
@@ -138,304 +135,6 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: false // Required for Render PostgreSQL connection
-  }
-});
-
-// Add API test endpoints for easier debugging
-addApiTestEndpoints(app, pool);
-
-// Initialize Resend client with error handling
-const resend = process.env.RESEND_API_KEY 
-  ? new Resend(process.env.RESEND_API_KEY)
-  : null;
-
-// Create a nodemailer transporter
-console.log('Email configuration:', {
-  user: process.env.EMAIL_USER ? 'Configured' : 'Missing',
-  pass: process.env.EMAIL_PASSWORD ? 'Configured' : 'Missing'
-});
-
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD
-  },
-  debug: true, // Enable debug output
-  logger: true // Log information to the console
-});
-
-// Verify the transporter configuration
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('SMTP connection error:', error);
-  } else {
-    console.log('SMTP server is ready to send messages');
-  }
-});
-
-// Test endpoint for email functionality
-app.get('/api/test-email', async (req, res) => {
-  try {
-    console.log('Attempting to send test email');
-    
-    const info = await transporter.sendMail({
-      from: `"Lion Bay Test" <${process.env.EMAIL_USER}>`,
-      to: process.env.EMAIL_USER, // Send to yourself
-      subject: 'Lion Bay Email Test',
-      html: '<h1>Test Email</h1><p>This is a test email from Lion Bay.</p>'
-    });
-    
-    console.log('Test email sent successfully:', info.messageId);
-    res.status(200).json({ 
-      message: 'Test email sent successfully',
-      messageId: info.messageId
-    });
-  } catch (error) {
-    console.error('Test email error details:', {
-      error: error.message,
-      stack: error.stack,
-      code: error.code,
-      command: error.command,
-      responseCode: error.responseCode,
-      response: error.response
-    });
-    res.status(500).json({ 
-      error: 'Failed to send test email',
-      message: error.message,
-      code: error.code
-    });
-  }
-});
-
-// Replace the email verification endpoint
-app.post('/api/auth/verify-email', async (req, res) => {
-  // Define verification code outside try block so it's accessible in catch
-  const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-  const codeExpiry = new Date(Date.now() + 15 * 60000); // 15 minutes
-  
-  try {
-    const { email } = req.body;
-    
-    // Check if it's a valid Columbia University email
-    if (!email.endsWith('@columbia.edu')) {
-      return res.status(400).json({ error: 'Only Columbia University emails (@columbia.edu) are allowed' });
-    }
-
-    // Check rate limiting
-    const MAX_ATTEMPTS = 5;
-    const RATE_LIMIT_WINDOW = 20; // minutes
-    
-    const attemptResult = await pool.query(
-      'SELECT * FROM verification_attempts WHERE email = $1',
-      [email]
-    );
-    
-    const now = new Date();
-    
-    if (attemptResult.rows.length > 0) {
-      const attempt = attemptResult.rows[0];
-      const resetTime = new Date(attempt.reset_time);
-      
-      // If we're past the reset time, reset the counter
-      if (now > resetTime) {
-        await pool.query(
-          'UPDATE verification_attempts SET attempt_count = 1, last_attempt = NOW(), reset_time = NOW() + INTERVAL \'20 minutes\' WHERE email = $1',
-          [email]
-        );
-      } 
-      // Otherwise, check if they've exceeded the limit
-      else if (attempt.attempt_count >= MAX_ATTEMPTS) {
-        const timeLeft = Math.ceil((resetTime - now) / 60000); // Time left in minutes
-        return res.status(429).json({ 
-          error: 'Too many verification attempts',
-          message: `You have reached the maximum number of verification attempts. Please try again in ${timeLeft} minutes.`,
-          resetTime: resetTime
-        });
-      } 
-      // Increment their attempt count
-      else {
-        await pool.query(
-          'UPDATE verification_attempts SET attempt_count = attempt_count + 1, last_attempt = NOW() WHERE email = $1',
-          [email]
-        );
-      }
-    } else {
-      // First attempt, create a record
-      await pool.query(
-        'INSERT INTO verification_attempts (email, attempt_count, last_attempt, reset_time) VALUES ($1, 1, NOW(), NOW() + INTERVAL \'20 minutes\')',
-        [email]
-      );
-    }
-    
-    // Get the current attempt count after update
-    const currentAttemptResult = await pool.query(
-      'SELECT attempt_count, reset_time FROM verification_attempts WHERE email = $1',
-      [email]
-    );
-    
-    const attemptsLeft = MAX_ATTEMPTS - currentAttemptResult.rows[0].attempt_count;
-    const resetTime = new Date(currentAttemptResult.rows[0].reset_time);
-    
-    // Create or update user
-    try {
-      // Check if user exists
-      const existingUserResult = await pool.query(
-        'SELECT * FROM users WHERE email = $1',
-        [email]
-      );
-      
-      if (existingUserResult.rows.length > 0) {
-        // Update existing user
-        await pool.query(
-          'UPDATE users SET verification_code = $1, code_expires = $2 WHERE email = $3',
-          [verificationCode, codeExpiry.toISOString(), email]
-        );
-      } else {
-        // Create new user
-        await pool.query(
-          'INSERT INTO users (email, verification_code, code_expires, email_verified) VALUES ($1, $2, $3, $4)',
-          [email, verificationCode, codeExpiry.toISOString(), false]
-        );
-      }
-    } catch (dbError) {
-      // If user doesn't exist, fail gracefully and continue
-      console.error('Database error:', dbError);
-      // Continue anyway - we'll send email even if database fails
-    }
-    
-    // Skip actual email sending if SKIP_EMAIL_VERIFICATION is TRUE
-    if (process.env.SKIP_EMAIL_VERIFICATION === 'TRUE') {
-      console.log('Skipping email verification. Code for testing:', verificationCode);
-      return res.status(200).json({
-        message: 'Verification code ready (email sending skipped)',
-        code: verificationCode,
-        attempts: {
-          count: currentAttemptResult.rows[0].attempt_count,
-          remaining: attemptsLeft,
-          resetTime: resetTime
-        }
-      });
-    }
-    
-    // Send email with Nodemailer
-    try {
-      const info = await transporter.sendMail({
-        from: `"Lion Bay" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: 'Lion Bay Verification Code',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h1 style="color: #1c4587;">Lion Bay</h1>
-            <p>Here is your verification code:</p>
-            <div style="background-color: #f0f0f0; padding: 10px 20px; font-size: 24px; font-weight: bold; text-align: center; letter-spacing: 5px;">
-              ${verificationCode}
-            </div>
-            <p>This code will expire in 15 minutes.</p>
-            <p><small>You have ${attemptsLeft} verification attempts remaining in this 20-minute period.</small></p>
-          </div>
-        `
-      });
-      
-      console.log('Email sent successfully:', info.messageId);
-      res.status(200).json({ 
-        message: 'Verification code sent to email',
-        code: verificationCode, // For development only, remove in production
-        attempts: {
-          count: currentAttemptResult.rows[0].attempt_count,
-          remaining: attemptsLeft,
-          resetTime: resetTime
-        }
-      });
-    } catch (emailError) {
-      console.error('Email sending error details:', {
-        error: emailError.message,
-        stack: emailError.stack,
-        code: emailError.code,
-        command: emailError.command,
-        responseCode: emailError.responseCode,
-        response: emailError.response
-      });
-      res.status(500).json({ error: 'Failed to send verification email. Please try again.' });
-    }
-  } catch (error) {
-    console.error('Verification process error:', error);
-    res.status(500).json({ error: 'Error in verification process' });
-  }
-});
-
-// Verify code and authenticate user
-app.post('/api/auth/verify-code', async (req, res) => {
-  try {
-    const { email, code } = req.body;
-    
-    // Verify email is from Columbia University
-    if (!email.endsWith('@columbia.edu')) {
-      return res.status(400).json({ error: 'Only Columbia University emails (@columbia.edu) are allowed' });
-    }
-    
-    console.log(`Verifying code: ${code} for email: ${email}`);
-    
-    // First check if user exists
-    const userResult = await pool.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email]
-    );
-    
-    if (userResult.rows.length === 0) {
-      console.log('User not found');
-      return res.status(400).json({ error: 'User not found with this email' });
-    }
-    
-    const user = userResult.rows[0];
-    
-    console.log('User found:', user.id);
-    console.log('Stored code:', user.verification_code);
-    console.log('Submitted code:', code);
-    
-    // Trim and normalize both codes to ensure consistent comparison
-    const storedCode = String(user.verification_code).trim();
-    const submittedCode = String(code).trim();
-    
-    // For development/testing purposes, allow admin bypass
-    if (submittedCode === '000000' && process.env.NODE_ENV !== 'production') {
-      console.log('Admin bypass code used');
-    } 
-    // Regular code check
-    else if (storedCode !== submittedCode) {
-      console.log(`Code mismatch: Stored "${storedCode}" vs Submitted "${submittedCode}"`);
-      return res.status(400).json({ error: 'Invalid verification code' });
-    }
-    
-    // Check if code is expired (skip for admin bypass)
-    if (code !== '000000' && new Date() > new Date(user.code_expires)) {
-      console.log('Code expired');
-      return res.status(400).json({ error: 'Verification code expired' });
-    }
-    
-    // Update user as verified
-    await pool.query(
-      'UPDATE users SET email_verified = true, verification_code = null WHERE id = $1',
-      [user.id]
-    );
-    
-    // Generate JWT token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-    
-    console.log('Verification successful');
-    res.status(200).json({
-      message: 'Email verified successfully',
-      token,
-      userId: user.id,
-      isAdmin: checkAdmin(user.email)
-    });
-  } catch (error) {
-    console.error('Code verification error:', error);
-    res.status(500).json({ error: 'Failed to verify code' });
   }
 });
 
@@ -882,28 +581,37 @@ app.get('/api/chats/:id/messages', authenticateToken, async (req, res) => {
   }
 });
 
-// Check if user has any unread messages
+// Check if user has unread messages
 app.get('/api/chats/has-unread', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
     
-    // Check for messages where user is not the sender and is_read is false
-    const unreadResult = await pool.query(
-      `SELECT EXISTS(
-        SELECT 1
-        FROM messages m
-        JOIN chats c ON m.chat_id = c.id
-        WHERE (c.buyer_id = $1 OR c.seller_id = $1)
-          AND m.sender_id != $1
-          AND m.is_read = false
+    // First verify the user exists
+    const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+    if (userCheck.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid user' });
+    }
+    
+    const result = await pool.query(
+      `SELECT EXISTS (
+        SELECT 1 FROM messages 
+        WHERE chat_id IN (
+          SELECT id FROM chats 
+          WHERE buyer_id = $1 OR seller_id = $1
+        )
+        AND sender_id != $1
+        AND is_read = false
       ) as has_unread`,
       [userId]
     );
     
-    res.json({ hasUnread: unreadResult.rows[0].has_unread });
+    res.json({ hasUnread: result.rows[0].has_unread });
   } catch (error) {
     console.error('Error checking unread messages:', error);
-    res.status(500).json({ error: 'Failed to check unread messages' });
+    res.status(500).json({ 
+      error: 'Failed to check unread messages',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -1729,6 +1437,45 @@ const scheduleCleanup = () => {
 
 // Call the function to schedule cleanup
 scheduleCleanup();
+
+// Get user profile data
+app.get('/api/users/profile', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    
+    const result = await pool.query(
+      `SELECT 
+        full_name,
+        email,
+        class_year,
+        major,
+        phone_number,
+        bio,
+        profile_image
+      FROM users 
+      WHERE id = $1`,
+      [userId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User profile not found' });
+    }
+    
+    const profile = result.rows[0];
+    res.json({
+      fullName: profile.full_name,
+      email: profile.email,
+      classYear: profile.class_year,
+      major: profile.major,
+      phoneNumber: profile.phone_number,
+      bio: profile.bio,
+      profileImage: profile.profile_image
+    });
+  } catch (error) {
+    console.error('Error fetching user profile:', error);
+    res.status(500).json({ error: 'Failed to fetch user profile' });
+  }
+});
 
 // Start the server
 const PORT = process.env.PORT || 3003;

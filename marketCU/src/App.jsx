@@ -2091,7 +2091,7 @@ function SiteFooter() {
 
 
 function CartPage() {
-  const { authAxios, isAuthenticated, currentUser } = useAuth();S
+  const { authAxios, isAuthenticated, currentUser } = useAuth();
   const { updateCartCount } = useCart();
   const { updateUnreadCount } = useMessages();
   const { protectedAction, renderToast } = useProtectedInteraction();

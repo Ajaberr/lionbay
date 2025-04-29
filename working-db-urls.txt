@@ -1,1 +1,0 @@
-postgresql://cump_db_user:***@dpg-cvdo1ulumphs73bjbp8g-a.oregon-postgres.render.com/cump_db

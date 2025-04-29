@@ -1,7 +1,0 @@
-DATABASE_URL=postgresql://test_olja_user:XyKl5WHIkqgQk9uziLH9efNJGisQxVMF@dpg-d07h6spr0fns738icm6g-a.oregon-postgres.render.com/test_olja
-JWT_SECRET=lionbay_secret_key_replace_in_production
-PORT=3001
-NODE_ENV=development
-SKIP_EMAIL_VERIFICATION=TRUE
-EMAIL_USER=columbiauniversitymarketplace@gmail.com
-EMAIL_PASSWORD=sozaaqhvimncqepi 
