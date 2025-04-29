@@ -24,7 +24,7 @@ console.log('RENDER_SERVICE_TYPE:', process.env.RENDER_SERVICE_TYPE);
 console.log('RENDER_INSTANCE_ID:', process.env.RENDER_INSTANCE_ID);
 
 // Debug application environment variables
-console.log('Application Environment Variables:');
+console.log('Environment Variables Check:');
 console.log('PORT:', process.env.PORT);
 console.log('NODE_ENV:', process.env.NODE_ENV);
 console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'Configured' : 'Missing');
@@ -34,7 +34,38 @@ console.log('EMAIL_PASSWORD:', process.env.EMAIL_PASSWORD ? 'Configured' : 'Miss
 console.log('FRONTEND_URL:', process.env.FRONTEND_URL || process.env.RENDER_EXTERNAL_URL);
 console.log('ADMIN_EMAILS:', process.env.ADMIN_EMAILS ? 'Configured' : 'Missing');
 
-// Improved CORS configuration to handle both local and production environments
+// Environment variable validation and fallbacks
+const requiredEnvVars = {
+  PORT: process.env.PORT || 10000,
+  NODE_ENV: process.env.NODE_ENV || 'development',
+  DATABASE_URL: process.env.DATABASE_URL,
+  JWT_SECRET: process.env.JWT_SECRET,
+  EMAIL_USER: process.env.EMAIL_USER,
+  EMAIL_PASSWORD: process.env.EMAIL_PASSWORD,
+  FRONTEND_URL: process.env.FRONTEND_URL || process.env.RENDER_EXTERNAL_URL,
+  ADMIN_EMAILS: process.env.ADMIN_EMAILS
+};
+
+// Validate required environment variables
+const missingEnvVars = Object.entries(requiredEnvVars)
+  .filter(([key, value]) => !value && key !== 'PORT' && key !== 'NODE_ENV')
+  .map(([key]) => key);
+
+if (missingEnvVars.length > 0) {
+  console.error('Missing required environment variables:', missingEnvVars);
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1);
+  }
+}
+
+// API Base URL configuration
+const API_BASE_URL = process.env.NODE_ENV === 'production' 
+  ? process.env.RENDER_EXTERNAL_URL || 'https://lionbay-api.onrender.com'
+  : 'http://localhost:10000';
+
+console.log('API Base URL:', API_BASE_URL);
+
+// Improved CORS configuration
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -63,6 +94,14 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 }));
+
+// Add request logging middleware
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log('Headers:', req.headers);
+  console.log('Origin:', req.headers.origin);
+  next();
+});
 
 // Configure Socket.IO with CORS settings
 const io = new Server(server, {
@@ -106,11 +145,21 @@ if (fs.existsSync(distPath)) {
   console.log('WARNING: Frontend build not found at:', distPath);
 }
 
-// Initialize PostgreSQL pool for connection management
+// Initialize PostgreSQL pool with SSL configuration
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: false // Required for Render PostgreSQL connection
+  }
+});
+
+// Test database connection on startup
+pool.connect((err, client, done) => {
+  if (err) {
+    console.error('Error connecting to the database:', err);
+  } else {
+    console.log('Successfully connected to the database');
+    done();
   }
 });
 
@@ -122,21 +171,19 @@ const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null;
 
-// Create a nodemailer transporter
-console.log('Email configuration:', {
-  user: process.env.EMAIL_USER ? 'Configured' : 'Missing',
-  pass: process.env.EMAIL_PASSWORD ? 'Configured' : 'Missing'
-});
-
-const transporter = nodemailer.createTransport({
+// Update email configuration to handle production environment
+const emailConfig = {
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD
   },
-  debug: true, // Enable debug output
-  logger: true // Log information to the console
-});
+  debug: process.env.NODE_ENV === 'development',
+  logger: true
+};
+
+// Create a nodemailer transporter with proper configuration
+const transporter = nodemailer.createTransport(emailConfig);
 
 // Verify the transporter configuration
 transporter.verify((error, success) => {
@@ -1772,8 +1819,48 @@ const scheduleCleanup = () => {
 // Call the function to schedule cleanup
 scheduleCleanup();
 
-// Start the server
-const PORT = process.env.PORT || 10000; // Use Render's default port
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+// Start the server with proper error handling
+const PORT = process.env.PORT || 10000;
+const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
+
+server.listen(PORT, HOST, (err) => {
+  if (err) {
+    console.error('Error starting server:', err);
+    process.exit(1);
+  }
+  console.log(`Server running on ${HOST}:${PORT}`);
+  console.log('Environment:', process.env.NODE_ENV);
+  console.log('Allowed Origins:', allowedOrigins);
+  console.log('API Base URL:', API_BASE_URL);
+  
+  // Test database connection
+  pool.query('SELECT NOW()', (err, res) => {
+    if (err) {
+      console.error('Database connection test failed:', err);
+    } else {
+      console.log('Database connection test successful:', res.rows[0]);
+    }
+  });
+  
+  // Test email configuration
+  if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
+    transporter.verify((error, success) => {
+      if (error) {
+        console.error('Email configuration test failed:', error);
+      } else {
+        console.log('Email configuration test successful');
+      }
+    });
+  }
+});
+
+// Add error handling for uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled Rejection:', err);
+  process.exit(1);
 }); 
