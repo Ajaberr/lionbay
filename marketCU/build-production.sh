@@ -46,8 +46,8 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        // In production, API requests will be served by the same origin
-        target: 'http://localhost:3001',
+        // In production, API requests will be served by the Render backend
+        target: 'https://lionbay-api.onrender.com',
         changeOrigin: true,
       }
     }
