@@ -368,7 +368,9 @@ export function HeadBar() {
             </span>
             <Link to="/cart" className="nav-link">Cart <span className="cart-badge"><CartCount /></span></Link>
             <Link to="/chats" className="nav-link">DMs <span className="message-badge"><MessageCount /></span></Link>
-            <button className="sign-in-btn" onClick={logout}>logout</button>
+            {windowWidth > 1160 && (
+              <button className="sign-in-btn" onClick={logout}>logout</button>
+            )}
             
             {/* Mobile menu toggle button */}
             {windowWidth <= 1160 && (
@@ -380,7 +382,9 @@ export function HeadBar() {
         ) : (
           <>
             <Link to="/cart" className="nav-link">Cart</Link>
-            <Link to="/login" className="login-btn">login</Link>
+            {windowWidth > 1160 && (
+              <Link to="/login" className="login-btn">login</Link>
+            )}
             
             {/* Mobile menu toggle button */}
             {windowWidth <= 1160 && (
@@ -1179,34 +1183,23 @@ function CreateProductPage() {
         return;
       }
 
-      // Create an image object to check dimensions
-      const img = new Image();
-      img.onload = () => {
-        // Check image dimensions
-        const maxWidth = 2000;
-        const maxHeight = 2000;
-        if (img.width > maxWidth || img.height > maxHeight) {
-          setImageError(`Image dimensions must be less than ${maxWidth}x${maxHeight} pixels`);
-          return;
-        }
-
-        // If all checks pass, proceed with the upload
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const base64Image = event.target.result;
-          setPreviewImage(base64Image);
-          setFormData({
-            ...formData,
-            image_path: base64Image
-          });
-          setImageError('');
-        };
-        reader.readAsDataURL(file);
+      // Removed image dimension check to allow phone photos
+      
+      // If checks pass, proceed with the upload
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64Image = event.target.result;
+        setPreviewImage(base64Image);
+        setFormData({
+          ...formData,
+          image_path: base64Image
+        });
+        setImageError('');
       };
-      img.onerror = () => {
-        setImageError('Failed to load image. Please try another file.');
+      reader.onerror = () => { // Add error handling for reader
+        setImageError('Failed to read image file. Please try again.');
       };
-      img.src = URL.createObjectURL(file);
+      reader.readAsDataURL(file);
     }
   };
 
@@ -2513,6 +2506,7 @@ function ProductManagementPage() {
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
+      // Check file type
       if (!file.type.startsWith('image/')) {
         setFormErrors({
           ...formErrors,
@@ -2521,10 +2515,19 @@ function ProductManagementPage() {
         return;
       }
       
-      // Update file state
-      setImageFile(file);
+      // Check file size (max 5MB)
+      const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+      if (file.size > maxSize) {
+        setFormErrors({
+          ...formErrors,
+          images: 'Image size must be less than 5MB'
+        });
+        return;
+      }
       
-      // Create preview
+      // Removed image dimension check
+
+      // If checks pass, proceed with the upload
       const reader = new FileReader();
       reader.onload = (event) => {
         const base64Image = event.target.result;
@@ -2536,6 +2539,12 @@ function ProductManagementPage() {
         setFormData({
           ...formData,
           image_path: base64Image
+        });
+      };
+      reader.onerror = () => { // Add error handling for reader
+        setFormErrors({
+          ...formErrors,
+          images: 'Failed to read image file. Please try again.'
         });
       };
       reader.readAsDataURL(file);
@@ -3026,7 +3035,7 @@ function MobileSidebar({ isOpen, onClose, isAuthenticated, isVerified, onLogout 
                 DMs {<span className="message-badge">{<MessageCount />}</span>}
               </Link>
               
-              <button className="logout-button" onClick={() => {
+              <button className="mobile-logout-button" onClick={() => {
                 onLogout();
                 onClose();
               }}>

@@ -31,10 +31,10 @@ const API_URL = process.env.API_URL || 'http://localhost:3003/api';
 // CORS configuration
 const allowedOrigins = process.env.NODE_ENV === 'production' 
   ? [
-      'https://lionbay-api.onrender.com',
-      'https://lionbay.com',
+  'https://lionbay-api.onrender.com',
+  'https://lionbay.com',
       'https://lionbay.onrender.com',
-      process.env.FRONTEND_URL
+  process.env.FRONTEND_URL
     ].filter(Boolean)
   : (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3003,http://localhost:5173').split(',');
 
@@ -156,14 +156,14 @@ const pool = new Pool({
 let transporter;
 if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
   transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASSWORD,
     },
   });
   console.log('Nodemailer transporter configured for Gmail.');
-} else {
+  } else {
   console.warn('Email credentials (EMAIL_USER, EMAIL_PASSWORD) not found in environment variables. Email sending will be disabled.');
 }
 

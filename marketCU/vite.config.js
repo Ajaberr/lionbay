@@ -19,28 +19,28 @@ export default defineConfig(({ command, mode }) => {
   console.log(`Mode: ${mode}, API URL: ${apiUrl}`)
   
   return {
-    plugins: [react()],
-    base: '/',
-    build: {
-      outDir: 'dist',
-      emptyOutDir: true,
-      sourcemap: false,
-      minify: 'terser',
-      // Ensure the build directory is resolved correctly
-      // This guarantees the output is in marketCU/dist
-      rollupOptions: {
-        output: {
-          manualChunks: {
-            'vendor': ['react', 'react-dom', 'react-router-dom'],
-          }
+  plugins: [react()],
+  base: '/',
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    sourcemap: false,
+    minify: 'terser',
+    // Ensure the build directory is resolved correctly
+    // This guarantees the output is in marketCU/dist
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor': ['react', 'react-dom', 'react-router-dom'],
         }
       }
-    },
-    server: {
-      proxy: {
-        '/api': {
+    }
+  },
+  server: {
+    proxy: {
+      '/api': {
           target: apiUrl,
-          changeOrigin: true,
+        changeOrigin: true,
         }
       }
     },

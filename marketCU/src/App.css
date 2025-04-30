@@ -256,6 +256,7 @@ body {
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.2s;
+  margin: 0 !important;
 }
 
 .sign-in-button:hover {
@@ -326,10 +327,13 @@ body {
 }
 .leftside{
   margin-left: 20px;
+  display: flex;
 }
 
 .rightside{
   margin-right: 20px;
+  display: flex;
+  align-items: center; /* Add this for vertical centering */
 }
 
 .header a{
@@ -1816,6 +1820,7 @@ img[src^="/api/placeholder"] {
   font-size: 14px;
   text-align: center;
   min-width: 70px;
+  margin: 0 !important;
 }
 
 .sign-in-btn:hover {
@@ -1831,7 +1836,8 @@ img[src^="/api/placeholder"] {
   border: none;
   cursor: pointer;
   padding: 8px;
-  margin-right: 10px;
+  margin: 0 !important;
+
 }
 
 .menu-icon {
@@ -1957,7 +1963,23 @@ img[src^="/api/placeholder"] {
   align-items: center;
   justify-content: center;
 }
-
+.mobile-logout-button {
+  background-color: #1c4587;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 0.6rem 1.2rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  width: 100px;
+  justify-content: center;
+  margin-left:20px;
+}
 .logout-button:hover {
   background-color: #163a70;
 }
@@ -3991,5 +4013,44 @@ html {
   .edit-product-button,
   .delete-product-button {
     width: 100%;
+  }
+}
+
+/* Add media query for very small screens */
+@media (max-width: 480px) {
+  .cart-item {
+    flex-direction: column;
+    align-items: flex-start; /* Align items to the start */
+  }
+
+  .cart-item-image {
+    width: 100%; /* Make image take full width */
+    height: auto; /* Adjust height automatically */
+    max-height: 200px; /* Limit max height */
+    margin-right: 0;
+    margin-bottom: 1rem; /* Add space below image */
+  }
+
+  .cart-item-details {
+    width: 100%; /* Ensure details take full width */
+  }
+
+  .cart-item-actions {
+    flex-direction: column; /* Stack buttons */
+    align-items: stretch; /* Make buttons full width */
+    width: 100%;
+  }
+
+  .go-to-chat-button,
+  .remove-from-cart-button,
+  .contact-seller-button { /* Include contact button if used */
+    width: 100%;
+    text-align: center;
+  }
+
+  /* Adjust product management layout on very small screens too */
+  .product-management-details,
+  .product-management-actions {
+    padding: 1rem;
   }
 }
