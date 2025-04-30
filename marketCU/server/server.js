@@ -1482,6 +1482,56 @@ app.get('/', (req, res) => {
   res.json({ message: 'Server is running', status: 'ok' });
 });
 
+// Email verification endpoint
+app.post('/api/auth/verify-email', async (req, res) => {
+  try {
+    const { email, verificationCode } = req.body;
+    
+    if (!email || !verificationCode) {
+      return res.status(400).json({ error: 'Email and verification code are required' });
+    }
+    
+    // Find user by email and verification code
+    const userResult = await pool.query(
+      'SELECT * FROM users WHERE email = $1 AND verification_code = $2',
+      [email, verificationCode]
+    );
+    
+    if (userResult.rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid verification code' });
+    }
+    
+    const user = userResult.rows[0];
+    
+    // Update user's email_verified status
+    await pool.query(
+      'UPDATE users SET email_verified = true, verification_code = NULL WHERE id = $1',
+      [user.id]
+    );
+    
+    // Generate new JWT token
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+    
+    res.json({
+      success: true,
+      message: 'Email verified successfully',
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        email_verified: true
+      }
+    });
+  } catch (error) {
+    console.error('Email verification error:', error);
+    res.status(500).json({ error: 'Failed to verify email' });
+  }
+});
+
 // Start the server
 const PORT = process.env.PORT || 3003;
 server.listen(PORT, () => {
