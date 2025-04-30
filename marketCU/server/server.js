@@ -1591,13 +1591,13 @@ app.post('/api/auth/verify-email', async (req, res) => {
     
     const user = userResult.rows[0];
     
-    // Update user's email_verified status
+    // Update user's verification status
     await pool.query(
-      'UPDATE users SET email_verified = true, verification_code = NULL WHERE id = $1',
+      'UPDATE users SET is_verified = true, verification_code = NULL WHERE id = $1',
       [user.id]
     );
     
-    // Generate new JWT token
+    // Generate JWT token
     const token = jwt.sign(
       { userId: user.id, email: user.email },
       process.env.JWT_SECRET,
@@ -1611,7 +1611,7 @@ app.post('/api/auth/verify-email', async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
-        email_verified: true
+        is_verified: true
       }
     });
   } catch (error) {

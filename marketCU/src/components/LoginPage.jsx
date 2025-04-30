@@ -28,8 +28,8 @@ function LoginPage({ setIsAuthenticated }) {
     setErrorMessage('');
     
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/send-verification`, { email });
-      if (response.data.success) {
+      const response = await axios.post(`${API_BASE_URL}/send-verification-code`, { email });
+      if (response.data.message) {
         setCodeSent(true);
         setErrorMessage('');
         // In development, auto-fill the code if returned
@@ -37,7 +37,7 @@ function LoginPage({ setIsAuthenticated }) {
           setVerificationCode(response.data.code);
         }
       } else {
-        setErrorMessage(response.data.message || 'Failed to send verification code');
+        setErrorMessage(response.data.error || 'Failed to send verification code');
       }
     } catch (error) {
       setErrorMessage(error.response?.data?.error || 'Failed to send verification code. Please try again.');
