@@ -18,32 +18,42 @@ function LoginPage({ setIsAuthenticated }) {
 
   const handleSendCode = async (e) => {
     e.preventDefault();
-    
+    setErrorMessage('');
+    setLoading(true);
+
     if (!email.endsWith('@columbia.edu')) {
-      setErrorMessage('Only Columbia University emails are allowed');
+      setErrorMessage('Please use a Columbia University email address');
+      setLoading(false);
       return;
     }
-    
-    setLoading(true);
-    setErrorMessage('');
-    
+
     try {
-      const response = await axios.post(`${API_BASE_URL}/send-verification-code`, { email });
-      if (response.data.message) {
-        setCodeSent(true);
-        setErrorMessage('');
-        setVerificationCode(''); // Clear any previous code
-      } else {
-        setErrorMessage(response.data.error || 'Failed to send verification code');
+      const response = await fetch(`${API_BASE_URL}/api/send-verification-code`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          const resetTime = new Date(data.reset_time);
+          const now = new Date();
+          const minutesLeft = Math.ceil((resetTime - now) / 60000);
+          setErrorMessage(`Too many attempts. Please try again in ${minutesLeft} minutes.`);
+        } else {
+          setErrorMessage(data.error || 'Failed to send verification code');
+        }
+        return;
       }
-    } catch (error) {
-      if (error.response?.status === 429) {
-        const resetTime = new Date(error.response.data.resetTime);
-        const minutes = Math.ceil((resetTime - new Date()) / 60000);
-        setErrorMessage(`Too many attempts. Please try again in ${minutes} minutes.`);
-      } else {
-        setErrorMessage(error.response?.data?.error || 'Failed to send verification code. Please try again.');
-      }
+
+      setVerificationCode('');
+      setCodeSent(true);
+    } catch (err) {
+      setErrorMessage('Failed to send verification code. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -51,42 +61,46 @@ function LoginPage({ setIsAuthenticated }) {
 
   const handleVerifyCode = async (e) => {
     e.preventDefault();
-    
-    // Validate code format
+    setErrorMessage('');
+    setLoading(true);
+
     if (!/^\d{6}$/.test(verificationCode)) {
-      setErrorMessage('Please enter a valid 6-digit code');
+      setErrorMessage('Verification code must be 6 digits');
+      setLoading(false);
       return;
     }
-    
-    setLoading(true);
-    setErrorMessage('');
-    
+
     try {
-      console.log('Sending verification request with:', { email, verificationCode });
-      const response = await axios.post(`${API_BASE_URL}/auth/verify-email`, { 
-        email, 
-        verificationCode
+      const response = await fetch(`${API_BASE_URL}/api/auth/verify-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, verificationCode }),
       });
-      
-      console.log('Server response:', response.data);
-      
-      if (response.data.token && response.data.user) {
-        localStorage.setItem('token', response.data.token);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
-        setIsAuthenticated(true);
-        navigate('/market');
-      } else {
-        setErrorMessage('Invalid response from server. Please try again.');
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          const resetTime = new Date(data.reset_time);
+          const now = new Date();
+          const minutesLeft = Math.ceil((resetTime - now) / 60000);
+          setErrorMessage(`Too many attempts. Please try again in ${minutesLeft} minutes.`);
+        } else {
+          setErrorMessage(data.error || 'Failed to verify code');
+        }
+        return;
       }
-    } catch (error) {
-      if (error.response?.status === 429) {
-        const resetTime = new Date(error.response.data.resetTime);
-        const minutes = Math.ceil((resetTime - new Date()) / 60000);
-        setErrorMessage(`Too many attempts. Please try again in ${minutes} minutes.`);
-      } else {
-        console.error('Verification error details:', error.response?.data || error);
-        setErrorMessage(error.response?.data?.error || 'Invalid or expired verification code. Please try again.');
-      }
+
+      // Store the token and user data
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      
+      // Redirect to home page
+      window.location.href = '/';
+    } catch (err) {
+      setErrorMessage('Failed to verify code. Please try again.');
     } finally {
       setLoading(false);
     }

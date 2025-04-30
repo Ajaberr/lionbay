@@ -20,21 +20,262 @@ const fs = require('fs');
 const { cleanupInactiveChats } = require('./chatCleanup');
 const nodemailer = require('nodemailer');
 
-// Configure email transporter
+// Configure email transporter with improved settings
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD
+  },
+  pool: true,
+  maxConnections: 5,
+  maxMessages: 100,
+  rateDelta: 1000, // 1 second between messages
+  rateLimit: 100 // max 100 messages per second
+});
+
+// Verify email configuration with retry
+const verifyEmailConfig = async () => {
+  let retries = 3;
+  while (retries > 0) {
+    try {
+      await transporter.verify();
+      console.log('Email server is ready to send messages');
+      return true;
+    } catch (error) {
+      console.error('Email configuration error:', error);
+      retries--;
+      if (retries === 0) {
+        console.error('Failed to verify email configuration after 3 attempts');
+        return false;
+      }
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before retry
+    }
+  }
+};
+
+// Initialize email configuration
+verifyEmailConfig();
+
+// Helper function to check rate limiting
+const checkRateLimit = async (email) => {
+  const result = await pool.query(
+    'SELECT * FROM verification_attempts WHERE email = $1 AND reset_time > NOW()',
+    [email]
+  );
+  return result.rows.length > 0;
+};
+
+// Helper function to check suspicious activity
+const checkSuspiciousActivity = async (email) => {
+  const result = await pool.query(
+    'SELECT COUNT(*) as count FROM verification_attempts WHERE email = $1 AND last_attempt > NOW() - INTERVAL \'1 hour\'',
+    [email]
+  );
+  return result.rows[0].count > 10; // More than 10 attempts in an hour
+};
+
+// Helper function to cleanup expired codes
+const cleanupExpiredCodes = async () => {
+  try {
+    await pool.query(
+      'DELETE FROM verification_codes WHERE expires_at < NOW()'
+    );
+    console.log('Cleaned up expired verification codes');
+  } catch (error) {
+    console.error('Error cleaning up expired codes:', error);
+  }
+};
+
+// Schedule cleanup of expired codes every hour
+setInterval(cleanupExpiredCodes, 60 * 60 * 1000);
+
+// Improved email sending function with retry mechanism
+const sendVerificationEmail = async (email, code) => {
+  // Validate email format
+  if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+    console.error('Invalid email format:', email);
+    return false;
+  }
+
+  // Check for suspicious activity
+  if (await checkSuspiciousActivity(email)) {
+    console.error('Suspicious activity detected for email:', email);
+    return false;
+  }
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: 'Your Verification Code',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Verification Code</h2>
+        <p>Your verification code is:</p>
+        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; margin: 20px 0;">
+          ${code}
+        </div>
+        <p>This code will expire in 10 minutes.</p>
+        <p>If you didn't request this code, please ignore this email.</p>
+      </div>
+    `
+  };
+
+  let retries = 3;
+  while (retries > 0) {
+    try {
+      await transporter.sendMail(mailOptions);
+      console.log('Verification email sent successfully to:', email);
+      return true;
+    } catch (error) {
+      console.error('Error sending verification email:', error);
+      retries--;
+      if (retries === 0) {
+        console.error('Failed to send verification email after 3 attempts');
+        return false;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+    }
+  }
+  return false;
+};
+
+// Update the verification code endpoint
+app.post('/api/send-verification-code', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    // Validate email domain
+    if (!email.endsWith('@columbia.edu')) {
+      return res.status(400).json({ error: 'Only Columbia University emails are allowed' });
+    }
+
+    // Check rate limiting
+    if (await checkRateLimit(email)) {
+      return res.status(429).json({ 
+        error: 'Too many attempts. Please try again later.',
+        resetTime: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes from now
+      });
+    }
+
+    // Check for suspicious activity
+    if (await checkSuspiciousActivity(email)) {
+      return res.status(429).json({ 
+        error: 'Suspicious activity detected. Please try again later.',
+        resetTime: new Date(Date.now() + 60 * 60 * 1000) // 1 hour from now
+      });
+    }
+
+    // Generate 6-digit verification code
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
+
+    // Store verification code with upsert
+    await pool.query(
+      'INSERT INTO verification_codes (email, code, expires_at) VALUES ($1, $2, $3) ON CONFLICT (email) DO UPDATE SET code = $2, expires_at = $3',
+      [email, verificationCode, expiresAt]
+    );
+
+    // Update rate limiting
+    await pool.query(
+      'INSERT INTO verification_attempts (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET attempt_count = verification_attempts.attempt_count + 1, last_attempt = NOW(), reset_time = NOW() + INTERVAL \'10 minutes\'',
+      [email]
+    );
+
+    // Send verification email
+    const emailSent = await sendVerificationEmail(email, verificationCode);
+    if (!emailSent) {
+      return res.status(500).json({ error: 'Failed to send verification email' });
+    }
+
+    res.json({ message: 'Verification code sent successfully' });
+  } catch (error) {
+    console.error('Error sending verification code:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Verify email configuration
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('Email configuration error:', error);
-  } else {
-    console.log('Email server is ready to send messages');
+// Update the verification endpoint
+app.post('/api/auth/verify-email', async (req, res) => {
+  try {
+    const { email, verificationCode } = req.body;
+    
+    if (!email || !verificationCode) {
+      return res.status(400).json({ error: 'Email and verification code are required' });
+    }
+
+    // Check rate limiting
+    if (await checkRateLimit(email)) {
+      return res.status(429).json({ 
+        error: 'Too many attempts. Please try again later.',
+        resetTime: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes from now
+      });
+    }
+
+    // Check verification code
+    const codeResult = await pool.query(
+      'SELECT * FROM verification_codes WHERE email = $1 AND code = $2 AND expires_at > NOW()',
+      [email, verificationCode]
+    );
+
+    if (codeResult.rows.length === 0) {
+      // Update rate limiting
+      await pool.query(
+        'INSERT INTO verification_attempts (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET attempt_count = verification_attempts.attempt_count + 1, last_attempt = NOW(), reset_time = NOW() + INTERVAL \'10 minutes\'',
+        [email]
+      );
+      return res.status(400).json({ error: 'Invalid or expired verification code' });
+    }
+
+    // Clear rate limiting and verification code on success
+    await pool.query('DELETE FROM verification_attempts WHERE email = $1', [email]);
+    await pool.query('DELETE FROM verification_codes WHERE email = $1', [email]);
+
+    // Check if user exists
+    const userResult = await pool.query(
+      'SELECT * FROM users WHERE email = $1',
+      [email]
+    );
+
+    let user;
+    if (userResult.rows.length === 0) {
+      // Create new user
+      const newUserResult = await pool.query(
+        'INSERT INTO users (email, is_verified) VALUES ($1, true) RETURNING *',
+        [email]
+      );
+      user = newUserResult.rows[0];
+    } else {
+      // Update existing user
+      const updateResult = await pool.query(
+        'UPDATE users SET is_verified = true WHERE email = $1 RETURNING *',
+        [email]
+      );
+      user = updateResult.rows[0];
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        isVerified: user.is_verified
+      }
+    });
+  } catch (error) {
+    console.error('Verification error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1568,180 +1809,6 @@ app.get('/api/users/profile', authenticateToken, async (req, res) => {
 // Add this before any other routes
 app.get('/', (req, res) => {
   res.json({ message: 'Server is running', status: 'ok' });
-});
-
-// Email verification endpoint
-app.post('/api/auth/verify-email', async (req, res) => {
-  try {
-    console.log('Received verification request:', req.body);
-    const { email, verificationCode } = req.body;
-    
-    if (!email || !verificationCode) {
-      console.log('Missing required fields:', { email, verificationCode });
-      return res.status(400).json({ error: 'Email and verification code are required' });
-    }
-    
-    // Check rate limiting
-    const rateLimitResult = await pool.query(
-      'SELECT * FROM verification_attempts WHERE email = $1',
-      [email]
-    );
-    
-    if (rateLimitResult.rows.length > 0) {
-      const attempt = rateLimitResult.rows[0];
-      if (attempt.attempt_count >= 5 && new Date(attempt.reset_time) > new Date()) {
-        return res.status(429).json({ 
-          error: 'Too many attempts. Please try again later.',
-          resetTime: attempt.reset_time
-        });
-      }
-    }
-    
-    // Find user by email and verification code
-    console.log('Checking user with:', { email, verificationCode });
-    const userResult = await pool.query(
-      'SELECT * FROM users WHERE email = $1 AND verification_code = $2',
-      [email, verificationCode]
-    );
-    
-    if (userResult.rows.length === 0) {
-      // Update rate limiting
-      if (rateLimitResult.rows.length > 0) {
-        await pool.query(
-          'UPDATE verification_attempts SET attempt_count = attempt_count + 1 WHERE email = $1',
-          [email]
-        );
-      } else {
-        await pool.query(
-          'INSERT INTO verification_attempts (email, attempt_count) VALUES ($1, 1)',
-          [email]
-        );
-      }
-      
-      console.log('No user found with matching email and code');
-      return res.status(400).json({ error: 'Invalid verification code' });
-    }
-    
-    const user = userResult.rows[0];
-    console.log('Found user:', user);
-    
-    // Check if code is expired
-    const codeAge = new Date() - new Date(user.created_at);
-    if (codeAge > 10 * 60 * 1000) { // 10 minutes
-      return res.status(400).json({ error: 'Verification code has expired' });
-    }
-    
-    // Update user's verification status
-    await pool.query(
-      'UPDATE users SET is_verified = true, verification_code = NULL WHERE id = $1',
-      [user.id]
-    );
-    
-    // Clear rate limiting
-    await pool.query(
-      'DELETE FROM verification_attempts WHERE email = $1',
-      [email]
-    );
-    
-    // Generate JWT token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-    
-    console.log('Verification successful, sending response');
-    res.json({
-      success: true,
-      message: 'Email verified successfully',
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        is_verified: true
-      }
-    });
-  } catch (error) {
-    console.error('Email verification error:', error);
-    res.status(500).json({ error: 'Failed to verify email' });
-  }
-});
-
-const sendVerificationEmail = async (email, code) => {
-  const mailOptions = {
-    from: process.env.EMAIL_USER,
-    to: email,
-    subject: 'Your Verification Code',
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #333;">Verification Code</h2>
-        <p>Your verification code is:</p>
-        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; margin: 20px 0;">
-          ${code}
-        </div>
-        <p>This code will expire in 10 minutes.</p>
-        <p>If you didn't request this code, please ignore this email.</p>
-      </div>
-    `
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log('Verification email sent successfully');
-    return true;
-  } catch (error) {
-    console.error('Error sending verification email:', error);
-    return false;
-  }
-};
-
-// Update the verification code endpoint
-app.post('/api/send-verification-code', async (req, res) => {
-  const { email } = req.body;
-  
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required' });
-  }
-
-  try {
-    // Generate a 6-digit verification code
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    // Store the code in the database with expiration
-    const expirationTime = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
-    
-    // First check if user exists
-    const userResult = await pool.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email]
-    );
-    
-    if (userResult.rows.length === 0) {
-      // Create new user with verification code
-      await pool.query(
-        'INSERT INTO users (email, verification_code) VALUES ($1, $2)',
-        [email, verificationCode]
-      );
-    } else {
-      // Update existing user's verification code
-      await pool.query(
-        'UPDATE users SET verification_code = $1 WHERE email = $2',
-        [verificationCode, email]
-      );
-    }
-
-    // Send the verification email
-    const emailSent = await sendVerificationEmail(email, verificationCode);
-    
-    if (!emailSent) {
-      return res.status(500).json({ error: 'Failed to send verification email' });
-    }
-
-    res.json({ message: 'Verification code sent successfully' });
-  } catch (error) {
-    console.error('Error sending verification code:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
 });
 
 // Start the server
