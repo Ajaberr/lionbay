@@ -18,6 +18,25 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const { cleanupInactiveChats } = require('./chatCleanup');
+const nodemailer = require('nodemailer');
+
+// Configure email transporter
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASSWORD
+  }
+});
+
+// Verify email configuration
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('Email configuration error:', error);
+  } else {
+    console.log('Email server is ready to send messages');
+  }
+});
 
 const app = express();
 const server = http.createServer(app);
@@ -27,15 +46,26 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
   ? [
       'https://lionbay-api.onrender.com',
       'https://lionbay.com',
+      'https://lionbay.onrender.com',
       process.env.FRONTEND_URL
     ].filter(Boolean)
-  : '*';
+  : ['http://localhost:3000', 'http://localhost:3003'];
 
 console.log('Allowed CORS origins:', allowedOrigins);
 
 // Configure CORS with more detailed options
 app.use(cors({
-  origin: allowedOrigins,
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      console.log('CORS error:', msg, 'Origin:', origin);
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -127,6 +157,64 @@ const pool = new Pool({
     rejectUnauthorized: false // Required for Render PostgreSQL connection
   }
 });
+
+// Initialize database tables
+const initializeDatabase = async () => {
+  try {
+    // Create users table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255),
+        verification_code VARCHAR(6),
+        is_verified BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create verification_codes table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS verification_codes (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) NOT NULL,
+        code VARCHAR(6) NOT NULL,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create products table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS products (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        price DECIMAL(10,2) NOT NULL,
+        category VARCHAR(100),
+        condition VARCHAR(50),
+        image_url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create messages table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id SERIAL PRIMARY KEY,
+        chat_id VARCHAR(255) NOT NULL,
+        sender_id INTEGER REFERENCES users(id),
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    console.log('Database tables initialized successfully');
+  } catch (error) {
+    console.error('Error initializing database:', error);
+  }
+};
 
 // Authentication middleware
 const authenticateToken = (req, res, next) => {
@@ -1532,62 +1620,65 @@ app.post('/api/auth/verify-email', async (req, res) => {
   }
 });
 
-// Send verification code endpoint
-app.post('/api/auth/send-verification', async (req, res) => {
+const sendVerificationEmail = async (email, code) => {
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: 'Your Verification Code',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Verification Code</h2>
+        <p>Your verification code is:</p>
+        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; margin: 20px 0;">
+          ${code}
+        </div>
+        <p>This code will expire in 10 minutes.</p>
+        <p>If you didn't request this code, please ignore this email.</p>
+      </div>
+    `
+  };
+
   try {
-    const { email } = req.body;
-    
-    if (!email) {
-      return res.status(400).json({ error: 'Email is required' });
-    }
-    
-    // Check if email is a Columbia email
-    if (!email.endsWith('@columbia.edu')) {
-      return res.status(400).json({ error: 'Only Columbia University emails are allowed' });
-    }
-    
+    await transporter.sendMail(mailOptions);
+    console.log('Verification email sent successfully');
+    return true;
+  } catch (error) {
+    console.error('Error sending verification email:', error);
+    return false;
+  }
+};
+
+// Update the verification code endpoint
+app.post('/api/send-verification-code', async (req, res) => {
+  const { email } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  try {
     // Generate a 6-digit verification code
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
     
-    // Check if user exists
-    const userResult = await pool.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email]
+    // Store the code in the database with expiration
+    const expirationTime = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
+    
+    await pool.query(
+      'INSERT INTO verification_codes (email, code, expires_at) VALUES ($1, $2, $3)',
+      [email, verificationCode, expirationTime]
     );
+
+    // Send the verification email
+    const emailSent = await sendVerificationEmail(email, verificationCode);
     
-    let userId;
-    
-    if (userResult.rows.length === 0) {
-      // Create new user
-      const newUserResult = await pool.query(
-        'INSERT INTO users (email, verification_code) VALUES ($1, $2) RETURNING id',
-        [email, verificationCode]
-      );
-      userId = newUserResult.rows[0].id;
-    } else {
-      // Update existing user's verification code
-      userId = userResult.rows[0].id;
-      await pool.query(
-        'UPDATE users SET verification_code = $1 WHERE id = $2',
-        [verificationCode, userId]
-      );
+    if (!emailSent) {
+      return res.status(500).json({ error: 'Failed to send verification email' });
     }
-    
-    // TODO: Send email with verification code
-    // For now, we'll return the code in development
-    const response = {
-      success: true,
-      message: 'Verification code sent successfully'
-    };
-    
-    if (process.env.NODE_ENV !== 'production') {
-      response.code = verificationCode;
-    }
-    
-    res.json(response);
+
+    res.json({ message: 'Verification code sent successfully' });
   } catch (error) {
     console.error('Error sending verification code:', error);
-    res.status(500).json({ error: 'Failed to send verification code' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
