@@ -32,10 +32,6 @@ function LoginPage({ setIsAuthenticated }) {
       if (response.data.message) {
         setCodeSent(true);
         setErrorMessage('');
-        // In development, auto-fill the code if returned
-        if (response.data.code) {
-          setVerificationCode(response.data.code);
-        }
       } else {
         setErrorMessage(response.data.error || 'Failed to send verification code');
       }
