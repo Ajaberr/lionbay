@@ -1663,10 +1663,25 @@ app.post('/api/send-verification-code', async (req, res) => {
     // Store the code in the database with expiration
     const expirationTime = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
     
-    await pool.query(
-      'INSERT INTO verification_codes (email, code, expires_at) VALUES ($1, $2, $3)',
-      [email, verificationCode, expirationTime]
+    // First check if user exists
+    const userResult = await pool.query(
+      'SELECT * FROM users WHERE email = $1',
+      [email]
     );
+    
+    if (userResult.rows.length === 0) {
+      // Create new user with verification code
+      await pool.query(
+        'INSERT INTO users (email, verification_code) VALUES ($1, $2)',
+        [email, verificationCode]
+      );
+    } else {
+      // Update existing user's verification code
+      await pool.query(
+        'UPDATE users SET verification_code = $1 WHERE email = $2',
+        [verificationCode, email]
+      );
+    }
 
     // Send the verification email
     const emailSent = await sendVerificationEmail(email, verificationCode);
