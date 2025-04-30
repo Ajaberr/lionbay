@@ -23,29 +23,19 @@ const app = express();
 const server = http.createServer(app);
 
 // Improved CORS configuration to handle both local and production environments
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'http://localhost:3003',
-  'https://lionbay-api.onrender.com',
-  'https://lionbay.com',
-  process.env.FRONTEND_URL
-].filter(Boolean); // Remove any undefined values
+const allowedOrigins = process.env.NODE_ENV === 'production' 
+  ? [
+      'https://lionbay-api.onrender.com',
+      'https://lionbay.com',
+      process.env.FRONTEND_URL
+    ].filter(Boolean)
+  : '*';
 
 console.log('Allowed CORS origins:', allowedOrigins);
 
 // Configure CORS with more detailed options
 app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, etc)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) === -1) {
-      console.log(`CORS blocked request from origin: ${origin}`);
-      return callback(null, false);
-    }
-    return callback(null, true);
-  },
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -143,13 +133,23 @@ const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   
-  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  if (!token) {
+    console.log('No token provided in request');
+    return res.status(401).json({ error: 'No authentication token provided' });
+  }
   
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token' });
+  try {
+    const user = jwt.verify(token, process.env.JWT_SECRET);
     req.user = user;
+    console.log('Token validated successfully for user:', user.email);
     next();
-  });
+  } catch (err) {
+    console.log('Token validation failed:', err.message);
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired' });
+    }
+    return res.status(403).json({ error: 'Invalid token' });
+  }
 };
 
 // Admin middleware
