@@ -163,7 +163,7 @@ const SwipeDiscovery = () => {
       setError(null);
       setLoading(true);
       
-      const apiUrl = 'http://localhost:3001/api/products';
+      const apiUrl = 'https://lionbay-api.onrender.com/api/products';
       const response = await fetch(apiUrl, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -325,7 +325,7 @@ const SwipeDiscovery = () => {
       setTimeout(async () => {
         try {
           // Add product to cart
-          const cartApiUrl = 'http://localhost:3001/api/cart';
+          const cartApiUrl = 'https://lionbay-api.onrender.com/api/cart';
           const cartResponse = await fetch(cartApiUrl, {
             method: 'POST',
             headers: {

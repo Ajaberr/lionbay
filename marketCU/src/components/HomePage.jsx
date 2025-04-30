@@ -6,7 +6,7 @@ import '../App.css';
 import DiscoverFeature from './DiscoverFeature';
 
 // API Base URL Configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+const API_BASE_URL = 'https://lionbay-api.onrender.com/api';
 
 function HomePage() {
   const { isAuthenticated } = useAuth();

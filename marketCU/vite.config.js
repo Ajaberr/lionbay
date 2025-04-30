@@ -24,7 +24,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: process.env.VITE_API_BASE_URL || 'http://localhost:3003',
+        target: 'https://lionbay-api.onrender.com',
         changeOrigin: true,
       }
     }

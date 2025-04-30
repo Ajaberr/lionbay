@@ -4,7 +4,7 @@ import axios from 'axios';
 import './LoginPage.css';
 
 // API Base URL Configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3003/api';
+const API_BASE_URL = 'https://lionbay-api.onrender.com/api';
 
 function LoginPage({ setIsAuthenticated }) {
   const [email, setEmail] = useState('');

@@ -3,7 +3,7 @@ import { useAuth, useMessages } from '../App';
 import { io } from 'socket.io-client';
 import '../styles/HelpChatWidget.css';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
+const SOCKET_URL = 'https://lionbay-api.onrender.com';
 
 const HelpChatWidget = () => {
   const { currentUser, authAxios } = useAuth();

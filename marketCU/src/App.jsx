@@ -15,8 +15,8 @@ import SwipeDiscovery from './components/SwipeDiscovery';
 import DiscoverFeature from './components/DiscoverFeature';
 
 // API Base URL Configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
+const API_BASE_URL = 'https://lionbay-api.onrender.com/api';
+const SOCKET_URL = 'https://lionbay-api.onrender.com';
 
 // Define product categories for consistency
 const PRODUCT_CATEGORIES = [
@@ -200,7 +200,7 @@ export function CartProvider({ children }) {
     
     try {
       // Use the full API URL instead of relative path
-      const response = await fetch('http://localhost:3001/api/cart/count', {
+      const response = await fetch(`${API_BASE_URL}/cart/count`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -333,7 +333,7 @@ export function HeadBar() {
     if (isAuthenticated && currentUser) {
       const fetchProfileData = async () => {
         try {
-          const response = await fetch('http://localhost:3001/api/users/profile', {
+          const response = await fetch(`${API_BASE_URL}/users/profile`, {
             headers: {
               'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
@@ -2960,7 +2960,7 @@ function MobileSidebar({ isOpen, onClose, isAuthenticated, isVerified, onLogout 
     if (isOpen && isAuthenticated && currentUser) {
       const fetchProfileData = async () => {
         try {
-          const response = await fetch('http://localhost:3001/api/users/profile', {
+          const response = await fetch(`${API_BASE_URL}/users/profile`, {
             headers: {
               'Authorization': `Bearer ${localStorage.getItem('token')}`
             }
