@@ -1581,6 +1581,22 @@ app.post('/api/auth/verify-email', async (req, res) => {
       return res.status(400).json({ error: 'Email and verification code are required' });
     }
     
+    // Check rate limiting
+    const rateLimitResult = await pool.query(
+      'SELECT * FROM verification_attempts WHERE email = $1',
+      [email]
+    );
+    
+    if (rateLimitResult.rows.length > 0) {
+      const attempt = rateLimitResult.rows[0];
+      if (attempt.attempt_count >= 5 && new Date(attempt.reset_time) > new Date()) {
+        return res.status(429).json({ 
+          error: 'Too many attempts. Please try again later.',
+          resetTime: attempt.reset_time
+        });
+      }
+    }
+    
     // Find user by email and verification code
     console.log('Checking user with:', { email, verificationCode });
     const userResult = await pool.query(
@@ -1589,6 +1605,19 @@ app.post('/api/auth/verify-email', async (req, res) => {
     );
     
     if (userResult.rows.length === 0) {
+      // Update rate limiting
+      if (rateLimitResult.rows.length > 0) {
+        await pool.query(
+          'UPDATE verification_attempts SET attempt_count = attempt_count + 1 WHERE email = $1',
+          [email]
+        );
+      } else {
+        await pool.query(
+          'INSERT INTO verification_attempts (email, attempt_count) VALUES ($1, 1)',
+          [email]
+        );
+      }
+      
       console.log('No user found with matching email and code');
       return res.status(400).json({ error: 'Invalid verification code' });
     }
@@ -1596,10 +1625,22 @@ app.post('/api/auth/verify-email', async (req, res) => {
     const user = userResult.rows[0];
     console.log('Found user:', user);
     
+    // Check if code is expired
+    const codeAge = new Date() - new Date(user.created_at);
+    if (codeAge > 10 * 60 * 1000) { // 10 minutes
+      return res.status(400).json({ error: 'Verification code has expired' });
+    }
+    
     // Update user's verification status
     await pool.query(
       'UPDATE users SET is_verified = true, verification_code = NULL WHERE id = $1',
       [user.id]
+    );
+    
+    // Clear rate limiting
+    await pool.query(
+      'DELETE FROM verification_attempts WHERE email = $1',
+      [email]
     );
     
     // Generate JWT token

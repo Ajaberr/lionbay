@@ -32,11 +32,18 @@ function LoginPage({ setIsAuthenticated }) {
       if (response.data.message) {
         setCodeSent(true);
         setErrorMessage('');
+        setVerificationCode(''); // Clear any previous code
       } else {
         setErrorMessage(response.data.error || 'Failed to send verification code');
       }
     } catch (error) {
-      setErrorMessage(error.response?.data?.error || 'Failed to send verification code. Please try again.');
+      if (error.response?.status === 429) {
+        const resetTime = new Date(error.response.data.resetTime);
+        const minutes = Math.ceil((resetTime - new Date()) / 60000);
+        setErrorMessage(`Too many attempts. Please try again in ${minutes} minutes.`);
+      } else {
+        setErrorMessage(error.response?.data?.error || 'Failed to send verification code. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -44,6 +51,12 @@ function LoginPage({ setIsAuthenticated }) {
 
   const handleVerifyCode = async (e) => {
     e.preventDefault();
+    
+    // Validate code format
+    if (!/^\d{6}$/.test(verificationCode)) {
+      setErrorMessage('Please enter a valid 6-digit code');
+      return;
+    }
     
     setLoading(true);
     setErrorMessage('');
@@ -66,8 +79,14 @@ function LoginPage({ setIsAuthenticated }) {
         setErrorMessage('Invalid response from server. Please try again.');
       }
     } catch (error) {
-      console.error('Verification error details:', error.response?.data || error);
-      setErrorMessage(error.response?.data?.error || 'Invalid or expired verification code. Please try again.');
+      if (error.response?.status === 429) {
+        const resetTime = new Date(error.response.data.resetTime);
+        const minutes = Math.ceil((resetTime - new Date()) / 60000);
+        setErrorMessage(`Too many attempts. Please try again in ${minutes} minutes.`);
+      } else {
+        console.error('Verification error details:', error.response?.data || error);
+        setErrorMessage(error.response?.data?.error || 'Invalid or expired verification code. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
