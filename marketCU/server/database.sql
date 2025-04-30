@@ -28,6 +28,20 @@ CREATE TABLE IF NOT EXISTS verification_attempts (
   UNIQUE(email)
 );
 
+-- Create verification_logs table to track verification attempts
+CREATE TABLE IF NOT EXISTS verification_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT NOT NULL,
+  action TEXT NOT NULL CHECK (action IN ('send_code', 'verify_code')),
+  success BOOLEAN NOT NULL,
+  error TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create index on verification_logs for faster queries
+CREATE INDEX IF NOT EXISTS idx_verification_logs_email ON verification_logs(email);
+CREATE INDEX IF NOT EXISTS idx_verification_logs_created_at ON verification_logs(created_at);
+
 -- Create products table
 CREATE TABLE IF NOT EXISTS products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

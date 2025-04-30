@@ -140,33 +140,55 @@ const sendVerificationEmail = async (email, code) => {
   return false;
 };
 
+// Add logging utility
+const logVerificationAttempt = async (email, action, success, error = null) => {
+  try {
+    await pool.query(
+      'INSERT INTO verification_logs (email, action, success, error) VALUES ($1, $2, $3, $4)',
+      [email, action, success, error]
+    );
+  } catch (err) {
+    console.error('Error logging verification attempt:', err);
+  }
+};
+
 // Update the verification code endpoint
 app.post('/api/send-verification-code', async (req, res) => {
   try {
     const { email } = req.body;
     
     if (!email) {
+      await logVerificationAttempt(email, 'send_code', false, 'Email is required');
       return res.status(400).json({ error: 'Email is required' });
+    }
+
+    // Validate email format
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      await logVerificationAttempt(email, 'send_code', false, 'Invalid email format');
+      return res.status(400).json({ error: 'Invalid email format' });
     }
 
     // Validate email domain
     if (!email.endsWith('@columbia.edu')) {
+      await logVerificationAttempt(email, 'send_code', false, 'Only Columbia University emails are allowed');
       return res.status(400).json({ error: 'Only Columbia University emails are allowed' });
     }
 
     // Check rate limiting
     if (await checkRateLimit(email)) {
+      await logVerificationAttempt(email, 'send_code', false, 'Rate limit exceeded');
       return res.status(429).json({ 
         error: 'Too many attempts. Please try again later.',
-        resetTime: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes from now
+        reset_time: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes from now
       });
     }
 
     // Check for suspicious activity
     if (await checkSuspiciousActivity(email)) {
+      await logVerificationAttempt(email, 'send_code', false, 'Suspicious activity detected');
       return res.status(429).json({ 
         error: 'Suspicious activity detected. Please try again later.',
-        resetTime: new Date(Date.now() + 60 * 60 * 1000) // 1 hour from now
+        reset_time: new Date(Date.now() + 60 * 60 * 1000) // 1 hour from now
       });
     }
 
@@ -186,15 +208,31 @@ app.post('/api/send-verification-code', async (req, res) => {
       [email]
     );
 
-    // Send verification email
-    const emailSent = await sendVerificationEmail(email, verificationCode);
+    // Send verification email with retry
+    let emailSent = false;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (!emailSent && retryCount < maxRetries) {
+      emailSent = await sendVerificationEmail(email, verificationCode);
+      if (!emailSent) {
+        retryCount++;
+        if (retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount)); // Exponential backoff
+        }
+      }
+    }
+
     if (!emailSent) {
+      await logVerificationAttempt(email, 'send_code', false, 'Failed to send verification email after retries');
       return res.status(500).json({ error: 'Failed to send verification email' });
     }
 
+    await logVerificationAttempt(email, 'send_code', true);
     res.json({ message: 'Verification code sent successfully' });
   } catch (error) {
     console.error('Error sending verification code:', error);
+    await logVerificationAttempt(req.body.email, 'send_code', false, error.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -205,14 +243,22 @@ app.post('/api/auth/verify-email', async (req, res) => {
     const { email, verificationCode } = req.body;
     
     if (!email || !verificationCode) {
+      await logVerificationAttempt(email, 'verify_code', false, 'Email and verification code are required');
       return res.status(400).json({ error: 'Email and verification code are required' });
+    }
+
+    // Validate verification code format
+    if (!/^\d{6}$/.test(verificationCode)) {
+      await logVerificationAttempt(email, 'verify_code', false, 'Invalid verification code format');
+      return res.status(400).json({ error: 'Invalid verification code format' });
     }
 
     // Check rate limiting
     if (await checkRateLimit(email)) {
+      await logVerificationAttempt(email, 'verify_code', false, 'Rate limit exceeded');
       return res.status(429).json({ 
         error: 'Too many attempts. Please try again later.',
-        resetTime: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes from now
+        reset_time: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes from now
       });
     }
 
@@ -228,6 +274,7 @@ app.post('/api/auth/verify-email', async (req, res) => {
         'INSERT INTO verification_attempts (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET attempt_count = verification_attempts.attempt_count + 1, last_attempt = NOW(), reset_time = NOW() + INTERVAL \'10 minutes\'',
         [email]
       );
+      await logVerificationAttempt(email, 'verify_code', false, 'Invalid or expired verification code');
       return res.status(400).json({ error: 'Invalid or expired verification code' });
     }
 
@@ -260,21 +307,23 @@ app.post('/api/auth/verify-email', async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user.id, email: user.email },
+      { userId: user.id, email: user.email, isVerified: true },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
 
-    res.json({
+    await logVerificationAttempt(email, 'verify_code', true);
+    res.json({ 
       token,
       user: {
         id: user.id,
         email: user.email,
-        isVerified: user.is_verified
+        isVerified: true
       }
     });
   } catch (error) {
-    console.error('Verification error:', error);
+    console.error('Error verifying email:', error);
+    await logVerificationAttempt(req.body.email, 'verify_code', false, error.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

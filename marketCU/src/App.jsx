@@ -15,7 +15,9 @@ import SwipeDiscovery from './components/SwipeDiscovery';
 import DiscoverFeature from './components/DiscoverFeature';
 
 // API Base URL Configuration
-const API_BASE_URL = 'https://lionbay-api.onrender.com/api';
+const API_BASE_URL = process.env.NODE_ENV === 'production' 
+  ? 'https://lionbay-api.onrender.com'
+  : 'http://localhost:3003';
 const SOCKET_URL = 'https://lionbay-api.onrender.com';
 
 // Define product categories for consistency
@@ -457,26 +459,28 @@ function SignInPage() {
 
   const handleSendCode = async (e) => {
     e.preventDefault();
-    
+    setErrorMessage('');
     setLoading(true);
-    setError(null);
-    
+
+    if (!email.endsWith('@columbia.edu')) {
+      setErrorMessage('Please use a Columbia University email address');
+      setLoading(false);
+      return;
+    }
+
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/verify-email`, { email });
+      const response = await axios.post(`${API_BASE_URL}/api/send-verification-code`, { email });
+      setVerificationCode('');
       setCodeSent(true);
-      
-      // For development, auto-fill the code if returned in response
-      if (response.data.code) {
-        setVerificationCode(response.data.code);
-      }
-      
-      // Display success message to user
-      setToastMessage('Verification code sent to your email');
-      setToastType('success');
-      setShowToast(true);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to send verification code');
-      console.error('Email verification error:', err);
+      if (err.response?.status === 429) {
+        const resetTime = new Date(err.response.data.reset_time);
+        const now = new Date();
+        const minutesLeft = Math.ceil((resetTime - now) / 60000);
+        setErrorMessage(`Too many attempts. Please try again in ${minutesLeft} minutes.`);
+      } else {
+        setErrorMessage(err.response?.data?.error || 'Failed to send verification code');
+      }
     } finally {
       setLoading(false);
     }
@@ -484,31 +488,39 @@ function SignInPage() {
 
   const handleVerifyCode = async (e) => {
     e.preventDefault();
+    setErrorMessage('');
     setLoading(true);
-    setError(null);
+
+    if (!/^\d{6}$/.test(verificationCode)) {
+      setErrorMessage('Verification code must be 6 digits');
+      setLoading(false);
+      return;
+    }
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/verify-code`, {
+      const response = await axios.post(`${API_BASE_URL}/api/auth/verify-email`, {
         email,
-        code: verificationCode
+        verificationCode
       });
+
+      // Store the token and user data
+      localStorage.setItem('token', response.data.token);
+      localStorage.setItem('user', JSON.stringify(response.data.user));
       
-      // Check if this is an admin email
-      const isAdmin = ['admin@lionbay.com', 'support@lionbay.com'].includes(email);
+      // Update authentication state
+      setIsAuthenticated(true);
       
-      const userData = {
-        userId: response.data.userId,
-        email: email,
-        isAdmin: isAdmin || response.data.isAdmin
-      };
-      
-      console.log('User authenticated:', userData);
-      
-      verifyEmailLogin(response.data.token, userData);
-      navigate('/home');
-    } catch (error) {
-      console.error('Verification error:', error.response?.data || error.message);
-      setError('Invalid verification code. Please try again.');
+      // Redirect to home page
+      navigate('/');
+    } catch (err) {
+      if (err.response?.status === 429) {
+        const resetTime = new Date(err.response.data.reset_time);
+        const now = new Date();
+        const minutesLeft = Math.ceil((resetTime - now) / 60000);
+        setErrorMessage(`Too many attempts. Please try again in ${minutesLeft} minutes.`);
+      } else {
+        setErrorMessage(err.response?.data?.error || 'Failed to verify code');
+      }
     } finally {
       setLoading(false);
     }
