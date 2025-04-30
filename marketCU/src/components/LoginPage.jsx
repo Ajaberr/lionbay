@@ -26,15 +26,19 @@ function LoginPage({ setIsAuthenticated }) {
     setErrorMessage('');
     
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/verify-email`, { email });
+      const response = await axios.post(`${API_BASE_URL}/auth/send-verification`, { email });
       if (response.data.success) {
         setCodeSent(true);
         setErrorMessage('');
+        // In development, auto-fill the code if returned
+        if (response.data.code) {
+          setVerificationCode(response.data.code);
+        }
       } else {
         setErrorMessage(response.data.message || 'Failed to send verification code');
       }
     } catch (error) {
-      setErrorMessage(error.response?.data?.message || error.response?.data?.error || 'Failed to send verification code. Please try again.');
+      setErrorMessage(error.response?.data?.error || 'Failed to send verification code. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -47,14 +51,14 @@ function LoginPage({ setIsAuthenticated }) {
     setErrorMessage('');
     
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/verify-code`, { 
+      const response = await axios.post(`${API_BASE_URL}/auth/verify-email`, { 
         email, 
-        code: verificationCode 
+        verificationCode 
       });
       
-      if (response.data.token && response.data.userId) {
+      if (response.data.token && response.data.user) {
         localStorage.setItem('token', response.data.token);
-        localStorage.setItem('userId', response.data.userId);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
         setIsAuthenticated(true);
         navigate('/market');
       } else {

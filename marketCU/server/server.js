@@ -1532,6 +1532,65 @@ app.post('/api/auth/verify-email', async (req, res) => {
   }
 });
 
+// Send verification code endpoint
+app.post('/api/auth/send-verification', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+    
+    // Check if email is a Columbia email
+    if (!email.endsWith('@columbia.edu')) {
+      return res.status(400).json({ error: 'Only Columbia University emails are allowed' });
+    }
+    
+    // Generate a 6-digit verification code
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Check if user exists
+    const userResult = await pool.query(
+      'SELECT * FROM users WHERE email = $1',
+      [email]
+    );
+    
+    let userId;
+    
+    if (userResult.rows.length === 0) {
+      // Create new user
+      const newUserResult = await pool.query(
+        'INSERT INTO users (email, verification_code) VALUES ($1, $2) RETURNING id',
+        [email, verificationCode]
+      );
+      userId = newUserResult.rows[0].id;
+    } else {
+      // Update existing user's verification code
+      userId = userResult.rows[0].id;
+      await pool.query(
+        'UPDATE users SET verification_code = $1 WHERE id = $2',
+        [verificationCode, userId]
+      );
+    }
+    
+    // TODO: Send email with verification code
+    // For now, we'll return the code in development
+    const response = {
+      success: true,
+      message: 'Verification code sent successfully'
+    };
+    
+    if (process.env.NODE_ENV !== 'production') {
+      response.code = verificationCode;
+    }
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Error sending verification code:', error);
+    res.status(500).json({ error: 'Failed to send verification code' });
+  }
+});
+
 // Start the server
 const PORT = process.env.PORT || 3003;
 server.listen(PORT, () => {
