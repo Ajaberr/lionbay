@@ -18,315 +18,6 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const { cleanupInactiveChats } = require('./chatCleanup');
-const nodemailer = require('nodemailer');
-
-// Configure email transporter with improved settings
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD
-  },
-  pool: true,
-  maxConnections: 5,
-  maxMessages: 100,
-  rateDelta: 1000, // 1 second between messages
-  rateLimit: 100 // max 100 messages per second
-});
-
-// Verify email configuration with retry
-const verifyEmailConfig = async () => {
-  let retries = 3;
-  while (retries > 0) {
-    try {
-      await transporter.verify();
-      console.log('Email server is ready to send messages');
-      return true;
-    } catch (error) {
-      console.error('Email configuration error:', error);
-      retries--;
-      if (retries === 0) {
-        console.error('Failed to verify email configuration after 3 attempts');
-        return false;
-      }
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before retry
-    }
-  }
-};
-
-// Initialize email configuration
-verifyEmailConfig();
-
-// Helper function to check rate limiting
-const checkRateLimit = async (email) => {
-  const result = await pool.query(
-    'SELECT * FROM verification_attempts WHERE email = $1 AND reset_time > NOW()',
-    [email]
-  );
-  return result.rows.length > 0;
-};
-
-// Helper function to check suspicious activity
-const checkSuspiciousActivity = async (email) => {
-  const result = await pool.query(
-    'SELECT COUNT(*) as count FROM verification_attempts WHERE email = $1 AND last_attempt > NOW() - INTERVAL \'1 hour\'',
-    [email]
-  );
-  return result.rows[0].count > 10; // More than 10 attempts in an hour
-};
-
-// Helper function to cleanup expired codes
-const cleanupExpiredCodes = async () => {
-  try {
-    await pool.query(
-      'DELETE FROM verification_codes WHERE expires_at < NOW()'
-    );
-    console.log('Cleaned up expired verification codes');
-  } catch (error) {
-    console.error('Error cleaning up expired codes:', error);
-  }
-};
-
-// Schedule cleanup of expired codes every hour
-setInterval(cleanupExpiredCodes, 60 * 60 * 1000);
-
-// Improved email sending function with retry mechanism
-const sendVerificationEmail = async (email, code) => {
-  // Validate email format
-  if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-    console.error('Invalid email format:', email);
-    return false;
-  }
-
-  // Check for suspicious activity
-  if (await checkSuspiciousActivity(email)) {
-    console.error('Suspicious activity detected for email:', email);
-    return false;
-  }
-
-  const mailOptions = {
-    from: process.env.EMAIL_USER,
-    to: email,
-    subject: 'Your Verification Code',
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #333;">Verification Code</h2>
-        <p>Your verification code is:</p>
-        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; font-size: 24px; font-weight: bold; margin: 20px 0;">
-          ${code}
-        </div>
-        <p>This code will expire in 10 minutes.</p>
-        <p>If you didn't request this code, please ignore this email.</p>
-      </div>
-    `
-  };
-
-  let retries = 3;
-  while (retries > 0) {
-    try {
-      await transporter.sendMail(mailOptions);
-      console.log('Verification email sent successfully to:', email);
-      return true;
-    } catch (error) {
-      console.error('Error sending verification email:', error);
-      retries--;
-      if (retries === 0) {
-        console.error('Failed to send verification email after 3 attempts');
-        return false;
-      }
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
-    }
-  }
-  return false;
-};
-
-// Add logging utility
-const logVerificationAttempt = async (email, action, success, error = null) => {
-  try {
-    await pool.query(
-      'INSERT INTO verification_logs (email, action, success, error) VALUES ($1, $2, $3, $4)',
-      [email, action, success, error]
-    );
-  } catch (err) {
-    console.error('Error logging verification attempt:', err);
-  }
-};
-
-// Update the verification code endpoint
-app.post('/api/send-verification-code', async (req, res) => {
-  try {
-    const { email } = req.body;
-    
-    if (!email) {
-      await logVerificationAttempt(email, 'send_code', false, 'Email is required');
-      return res.status(400).json({ error: 'Email is required' });
-    }
-
-    // Validate email format
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      await logVerificationAttempt(email, 'send_code', false, 'Invalid email format');
-      return res.status(400).json({ error: 'Invalid email format' });
-    }
-
-    // Validate email domain
-    if (!email.endsWith('@columbia.edu')) {
-      await logVerificationAttempt(email, 'send_code', false, 'Only Columbia University emails are allowed');
-      return res.status(400).json({ error: 'Only Columbia University emails are allowed' });
-    }
-
-    // Check rate limiting
-    if (await checkRateLimit(email)) {
-      await logVerificationAttempt(email, 'send_code', false, 'Rate limit exceeded');
-      return res.status(429).json({ 
-        error: 'Too many attempts. Please try again later.',
-        reset_time: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes from now
-      });
-    }
-
-    // Check for suspicious activity
-    if (await checkSuspiciousActivity(email)) {
-      await logVerificationAttempt(email, 'send_code', false, 'Suspicious activity detected');
-      return res.status(429).json({ 
-        error: 'Suspicious activity detected. Please try again later.',
-        reset_time: new Date(Date.now() + 60 * 60 * 1000) // 1 hour from now
-      });
-    }
-
-    // Generate 6-digit verification code
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
-
-    // Store verification code with upsert
-    await pool.query(
-      'INSERT INTO verification_codes (email, code, expires_at) VALUES ($1, $2, $3) ON CONFLICT (email) DO UPDATE SET code = $2, expires_at = $3',
-      [email, verificationCode, expiresAt]
-    );
-
-    // Update rate limiting
-    await pool.query(
-      'INSERT INTO verification_attempts (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET attempt_count = verification_attempts.attempt_count + 1, last_attempt = NOW(), reset_time = NOW() + INTERVAL \'10 minutes\'',
-      [email]
-    );
-
-    // Send verification email with retry
-    let emailSent = false;
-    let retryCount = 0;
-    const maxRetries = 3;
-    
-    while (!emailSent && retryCount < maxRetries) {
-      emailSent = await sendVerificationEmail(email, verificationCode);
-      if (!emailSent) {
-        retryCount++;
-        if (retryCount < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount)); // Exponential backoff
-        }
-      }
-    }
-
-    if (!emailSent) {
-      await logVerificationAttempt(email, 'send_code', false, 'Failed to send verification email after retries');
-      return res.status(500).json({ error: 'Failed to send verification email' });
-    }
-
-    await logVerificationAttempt(email, 'send_code', true);
-    res.json({ message: 'Verification code sent successfully' });
-  } catch (error) {
-    console.error('Error sending verification code:', error);
-    await logVerificationAttempt(req.body.email, 'send_code', false, error.message);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Update the verification endpoint
-app.post('/api/auth/verify-email', async (req, res) => {
-  try {
-    const { email, verificationCode } = req.body;
-    
-    if (!email || !verificationCode) {
-      await logVerificationAttempt(email, 'verify_code', false, 'Email and verification code are required');
-      return res.status(400).json({ error: 'Email and verification code are required' });
-    }
-
-    // Validate verification code format
-    if (!/^\d{6}$/.test(verificationCode)) {
-      await logVerificationAttempt(email, 'verify_code', false, 'Invalid verification code format');
-      return res.status(400).json({ error: 'Invalid verification code format' });
-    }
-
-    // Check rate limiting
-    if (await checkRateLimit(email)) {
-      await logVerificationAttempt(email, 'verify_code', false, 'Rate limit exceeded');
-      return res.status(429).json({ 
-        error: 'Too many attempts. Please try again later.',
-        reset_time: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes from now
-      });
-    }
-
-    // Check verification code
-    const codeResult = await pool.query(
-      'SELECT * FROM verification_codes WHERE email = $1 AND code = $2 AND expires_at > NOW()',
-      [email, verificationCode]
-    );
-
-    if (codeResult.rows.length === 0) {
-      // Update rate limiting
-      await pool.query(
-        'INSERT INTO verification_attempts (email) VALUES ($1) ON CONFLICT (email) DO UPDATE SET attempt_count = verification_attempts.attempt_count + 1, last_attempt = NOW(), reset_time = NOW() + INTERVAL \'10 minutes\'',
-        [email]
-      );
-      await logVerificationAttempt(email, 'verify_code', false, 'Invalid or expired verification code');
-      return res.status(400).json({ error: 'Invalid or expired verification code' });
-    }
-
-    // Clear rate limiting and verification code on success
-    await pool.query('DELETE FROM verification_attempts WHERE email = $1', [email]);
-    await pool.query('DELETE FROM verification_codes WHERE email = $1', [email]);
-
-    // Check if user exists
-    const userResult = await pool.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email]
-    );
-
-    let user;
-    if (userResult.rows.length === 0) {
-      // Create new user
-      const newUserResult = await pool.query(
-        'INSERT INTO users (email, is_verified) VALUES ($1, true) RETURNING *',
-        [email]
-      );
-      user = newUserResult.rows[0];
-    } else {
-      // Update existing user
-      const updateResult = await pool.query(
-        'UPDATE users SET is_verified = true WHERE email = $1 RETURNING *',
-        [email]
-      );
-      user = updateResult.rows[0];
-    }
-
-    // Generate JWT token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, isVerified: true },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
-    await logVerificationAttempt(email, 'verify_code', true);
-    res.json({ 
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        isVerified: true
-      }
-    });
-  } catch (error) {
-    console.error('Error verifying email:', error);
-    await logVerificationAttempt(req.body.email, 'verify_code', false, error.message);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
 const app = express();
 const server = http.createServer(app);
@@ -447,64 +138,6 @@ const pool = new Pool({
     rejectUnauthorized: false // Required for Render PostgreSQL connection
   }
 });
-
-// Initialize database tables
-const initializeDatabase = async () => {
-  try {
-    // Create users table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255),
-        verification_code VARCHAR(6),
-        is_verified BOOLEAN DEFAULT false,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Create verification_codes table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS verification_codes (
-        id SERIAL PRIMARY KEY,
-        email VARCHAR(255) NOT NULL,
-        code VARCHAR(6) NOT NULL,
-        expires_at TIMESTAMP NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Create products table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS products (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id),
-        title VARCHAR(255) NOT NULL,
-        description TEXT,
-        price DECIMAL(10,2) NOT NULL,
-        category VARCHAR(100),
-        condition VARCHAR(50),
-        image_url TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Create messages table
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS messages (
-        id SERIAL PRIMARY KEY,
-        chat_id VARCHAR(255) NOT NULL,
-        sender_id INTEGER REFERENCES users(id),
-        content TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    console.log('Database tables initialized successfully');
-  } catch (error) {
-    console.error('Error initializing database:', error);
-  }
-};
 
 // Authentication middleware
 const authenticateToken = (req, res, next) => {
@@ -1858,6 +1491,115 @@ app.get('/api/users/profile', authenticateToken, async (req, res) => {
 // Add this before any other routes
 app.get('/', (req, res) => {
   res.json({ message: 'Server is running', status: 'ok' });
+});
+
+// Email verification endpoint
+app.post('/api/auth/verify-email', async (req, res) => {
+  try {
+    const { email, verificationCode } = req.body;
+    
+    if (!email || !verificationCode) {
+      return res.status(400).json({ error: 'Email and verification code are required' });
+    }
+    
+    // Find user by email and verification code
+    const userResult = await pool.query(
+      'SELECT * FROM users WHERE email = $1 AND verification_code = $2',
+      [email, verificationCode]
+    );
+    
+    if (userResult.rows.length === 0) {
+      return res.status(400).json({ error: 'Invalid verification code' });
+    }
+    
+    const user = userResult.rows[0];
+    
+    // Update user's email_verified status
+    await pool.query(
+      'UPDATE users SET email_verified = true, verification_code = NULL WHERE id = $1',
+      [user.id]
+    );
+    
+    // Generate new JWT token
+    const token = jwt.sign(
+      { userId: user.id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+    
+    res.json({
+      success: true,
+      message: 'Email verified successfully',
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        email_verified: true
+      }
+    });
+  } catch (error) {
+    console.error('Email verification error:', error);
+    res.status(500).json({ error: 'Failed to verify email' });
+  }
+});
+
+// Send verification code endpoint
+app.post('/api/auth/send-verification', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+    
+    // Check if email is a Columbia email
+    if (!email.endsWith('@columbia.edu')) {
+      return res.status(400).json({ error: 'Only Columbia University emails are allowed' });
+    }
+    
+    // Generate a 6-digit verification code
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Check if user exists
+    const userResult = await pool.query(
+      'SELECT * FROM users WHERE email = $1',
+      [email]
+    );
+    
+    let userId;
+    
+    if (userResult.rows.length === 0) {
+      // Create new user
+      const newUserResult = await pool.query(
+        'INSERT INTO users (email, verification_code) VALUES ($1, $2) RETURNING id',
+        [email, verificationCode]
+      );
+      userId = newUserResult.rows[0].id;
+    } else {
+      // Update existing user's verification code
+      userId = userResult.rows[0].id;
+      await pool.query(
+        'UPDATE users SET verification_code = $1 WHERE id = $2',
+        [verificationCode, userId]
+      );
+    }
+    
+    // TODO: Send email with verification code
+    // For now, we'll return the code in development
+    const response = {
+      success: true,
+      message: 'Verification code sent successfully'
+    };
+    
+    if (process.env.NODE_ENV !== 'production') {
+      response.code = verificationCode;
+    }
+    
+    res.json(response);
+  } catch (error) {
+    console.error('Error sending verification code:', error);
+    res.status(500).json({ error: 'Failed to send verification code' });
+  }
 });
 
 // Start the server

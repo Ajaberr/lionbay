@@ -4,43 +4,11 @@
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
-  is_verified BOOLEAN DEFAULT FALSE,
+  email_verified BOOLEAN DEFAULT FALSE,
+  verification_code TEXT,
+  code_expires TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-
--- Create verification_codes table
-CREATE TABLE IF NOT EXISTS verification_codes (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email TEXT NOT NULL,
-  code TEXT NOT NULL,
-  expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  UNIQUE(email)
-);
-
--- Create verification_attempts table to track rate limiting
-CREATE TABLE IF NOT EXISTS verification_attempts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email TEXT NOT NULL,
-  attempt_count INTEGER NOT NULL DEFAULT 1,
-  last_attempt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  reset_time TIMESTAMP WITH TIME ZONE DEFAULT NOW() + INTERVAL '10 minutes',
-  UNIQUE(email)
-);
-
--- Create verification_logs table to track verification attempts
-CREATE TABLE IF NOT EXISTS verification_logs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email TEXT NOT NULL,
-  action TEXT NOT NULL CHECK (action IN ('send_code', 'verify_code')),
-  success BOOLEAN NOT NULL,
-  error TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Create index on verification_logs for faster queries
-CREATE INDEX IF NOT EXISTS idx_verification_logs_email ON verification_logs(email);
-CREATE INDEX IF NOT EXISTS idx_verification_logs_created_at ON verification_logs(created_at);
 
 -- Create products table
 CREATE TABLE IF NOT EXISTS products (
@@ -94,4 +62,14 @@ CREATE TABLE IF NOT EXISTS help_messages (
   is_from_admin BOOLEAN DEFAULT FALSE,
   is_read BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create verification_attempts table to track rate limiting
+CREATE TABLE IF NOT EXISTS verification_attempts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT NOT NULL,
+  attempt_count INTEGER NOT NULL DEFAULT 1,
+  last_attempt TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  reset_time TIMESTAMP WITH TIME ZONE DEFAULT NOW() + INTERVAL '20 minutes',
+  UNIQUE(email)
 ); 
