@@ -2,10 +2,8 @@
 const path = require('path');
 const dotenv = require('dotenv');
 
-// 1) Load .env in this folder (marketCU/server/.env) if it exists
-dotenv.config({ path: path.join(__dirname, '.env') });
-// 2) Load project-root .env two levels up (../..) without overriding already-set vars
-dotenv.config({ path: path.join(__dirname, '..', '..', '.env'), override: false });
+const serverEnvPath = path.join(__dirname, '.env');
+const rootEnvPath = path.join(__dirname, '..', '..', '.env');
 
 // For backward compatibility, retain default behaviour too (will be a no-op now)
 // require('dotenv').config();
@@ -17,6 +15,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
+const nodemailer = require('nodemailer');
 const { cleanupInactiveChats } = require('./chatCleanup');
 
 const app = express();
@@ -152,6 +151,21 @@ const pool = new Pool({
     rejectUnauthorized: false // Required for Render PostgreSQL connection
   }
 });
+
+// Configure Nodemailer transporter
+let transporter;
+if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
+  transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASSWORD,
+    },
+  });
+  console.log('Nodemailer transporter configured for Gmail.');
+} else {
+  console.warn('Email credentials (EMAIL_USER, EMAIL_PASSWORD) not found in environment variables. Email sending will be disabled.');
+}
 
 // Authentication middleware
 const authenticateToken = (req, res, next) => {
@@ -1557,15 +1571,43 @@ app.post('/api/auth/verify-email', async (req, res) => {
   }
 });
 
-// Send verification code endpoint
+// In-memory store for rate limiting verification code requests
+// Structure: { email: [timestamp1, timestamp2, ...], ... }
+const verificationRequests = {};
+const RATE_LIMIT_WINDOW = 20 * 60 * 1000; // 20 minutes in milliseconds
+const RATE_LIMIT_MAX_REQUESTS = 5;
+
+// Send verification code endpoint - WITH RATE LIMITING
 app.post('/api/auth/send-verification', async (req, res) => {
+  const { email } = req.body;
+  
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+  
+  // --- Rate Limiting Logic Start ---
+  const now = Date.now();
+  const userTimestamps = verificationRequests[email] || [];
+  
+  // Filter out timestamps older than the window
+  const recentTimestamps = userTimestamps.filter(ts => now - ts < RATE_LIMIT_WINDOW);
+  
+  if (recentTimestamps.length >= RATE_LIMIT_MAX_REQUESTS) {
+    console.warn(`Rate limit exceeded for email: ${email}`);
+    // Calculate time until next request is allowed
+    const oldestRecentTimestamp = Math.min(...recentTimestamps);
+    const timeWaited = now - oldestRecentTimestamp;
+    const timeLeft = RATE_LIMIT_WINDOW - timeWaited;
+    const minutesLeft = Math.ceil(timeLeft / (60 * 1000));
+    
+    return res.status(429).json({
+      error: `Too many verification requests. Please wait ${minutesLeft} minute(s) before trying again.`,
+      retryAfterMinutes: minutesLeft
+    });
+  }
+  // --- Rate Limiting Logic End ---
+
   try {
-    const { email } = req.body;
-    
-    if (!email) {
-      return res.status(400).json({ error: 'Email is required' });
-    }
-    
     // Check if email is a Columbia email
     if (!email.endsWith('@columbia.edu')) {
       return res.status(400).json({ error: 'Only Columbia University emails are allowed' });
@@ -1598,21 +1640,63 @@ app.post('/api/auth/send-verification', async (req, res) => {
       );
     }
     
-    // TODO: Send email with verification code
-    // For now, we'll return the code in development
-    const response = {
-      success: true,
-      message: 'Verification code sent successfully'
-    };
-    
-    if (process.env.NODE_ENV !== 'production') {
-      response.code = verificationCode;
+    // Send email with verification code if transporter is configured
+    if (transporter) {
+      const mailOptions = {
+        from: `"Lion Bay" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: 'Your Lion Bay Verification Code',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+            <h1 style="color: #1c4587; text-align: center;">Lion Bay</h1>
+            <p style="font-size: 16px;">Hello,</p>
+            <p style="font-size: 16px;">Your verification code is:</p>
+            <p style="font-size: 24px; font-weight: bold; text-align: center; background-color: #f0f0f0; padding: 10px; border-radius: 4px; letter-spacing: 2px;">
+              ${verificationCode}
+            </p>
+            <p style="font-size: 16px;">This code will expire in 10 minutes. Please enter it on the login page to complete your sign-in.</p>
+            <p style="font-size: 14px; color: #666;">If you did not request this code, please ignore this email.</p>
+          </div>
+        `
+      };
+
+      try {
+        await transporter.sendMail(mailOptions);
+        console.log(`Verification email sent successfully to ${email}`);
+        
+        // Record the successful request timestamp AFTER sending the email
+        verificationRequests[email] = [...recentTimestamps, now];
+        
+        res.json({
+          success: true,
+          message: 'Verification code sent successfully to your email.'
+        });
+      } catch (emailError) {
+        console.error('Error sending verification email:', emailError);
+        // Return a generic error to the user, but log the details
+        res.status(500).json({ error: 'Failed to send verification code email. Please try again later.' });
+      }
+    } else {
+      // If email sending is disabled, return code in development for testing
+      console.warn('Email sending is disabled. Returning code in response (dev only).');
+      const response = {
+        success: true,
+        message: 'Verification code generated (email sending disabled)'
+      };
+      
+      if (process.env.NODE_ENV !== 'production') {
+        response.code = verificationCode;
+      }
+      
+      // Record the successful request timestamp even if email is disabled (for testing the limit)
+      verificationRequests[email] = [...recentTimestamps, now];
+      
+      res.json(response);
     }
-    
-    res.json(response);
+
   } catch (error) {
-    console.error('Error sending verification code:', error);
-    res.status(500).json({ error: 'Failed to send verification code' });
+    console.error('Error in send-verification endpoint processing:', error);
+    res.status(500).json({ error: 'Failed to process verification request' });
   }
 });
 
