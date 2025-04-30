@@ -53,10 +53,13 @@ function LoginPage({ setIsAuthenticated }) {
     setErrorMessage('');
     
     try {
+      console.log('Sending verification request with:', { email, verificationCode });
       const response = await axios.post(`${API_BASE_URL}/auth/verify-email`, { 
         email, 
-        verificationCode 
+        verificationCode
       });
+      
+      console.log('Server response:', response.data);
       
       if (response.data.token && response.data.user) {
         localStorage.setItem('token', response.data.token);
@@ -67,6 +70,7 @@ function LoginPage({ setIsAuthenticated }) {
         setErrorMessage('Invalid response from server. Please try again.');
       }
     } catch (error) {
+      console.error('Verification error details:', error.response?.data || error);
       setErrorMessage(error.response?.data?.error || 'Invalid or expired verification code. Please try again.');
     } finally {
       setLoading(false);

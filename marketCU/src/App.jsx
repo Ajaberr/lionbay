@@ -145,8 +145,7 @@ export function AuthProvider({ children }) {
 
   // Check if user is verified (has completed their profile)
   const isUserVerified = () => {
-    // Always return true to bypass verification checks
-    return true;
+    return currentUser?.is_verified || false;
   };
 
   // Create axios instance with auth headers
@@ -174,7 +173,7 @@ export function AuthProvider({ children }) {
     logout,
     authAxios,
     isAuthenticated: !!currentUser,
-    isVerified: true, // Always set to true to bypass verification checks
+    isVerified: isUserVerified(),
     updateUserProfile
   };
 

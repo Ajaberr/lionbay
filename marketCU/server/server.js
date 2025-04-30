@@ -1573,23 +1573,28 @@ app.get('/', (req, res) => {
 // Email verification endpoint
 app.post('/api/auth/verify-email', async (req, res) => {
   try {
+    console.log('Received verification request:', req.body);
     const { email, verificationCode } = req.body;
     
     if (!email || !verificationCode) {
+      console.log('Missing required fields:', { email, verificationCode });
       return res.status(400).json({ error: 'Email and verification code are required' });
     }
     
     // Find user by email and verification code
+    console.log('Checking user with:', { email, verificationCode });
     const userResult = await pool.query(
       'SELECT * FROM users WHERE email = $1 AND verification_code = $2',
       [email, verificationCode]
     );
     
     if (userResult.rows.length === 0) {
+      console.log('No user found with matching email and code');
       return res.status(400).json({ error: 'Invalid verification code' });
     }
     
     const user = userResult.rows[0];
+    console.log('Found user:', user);
     
     // Update user's verification status
     await pool.query(
@@ -1604,6 +1609,7 @@ app.post('/api/auth/verify-email', async (req, res) => {
       { expiresIn: '24h' }
     );
     
+    console.log('Verification successful, sending response');
     res.json({
       success: true,
       message: 'Email verified successfully',
