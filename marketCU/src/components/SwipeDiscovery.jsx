@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { useCart } from '../App';
 import ToastNotification from './ToastNotification';
-import { buildApiUrl } from '../config';
+import { buildApiUrl, API_BASE_URL } from '../config';
 import '../styles/SwipeDiscovery.css';
 
 const SwipeDiscovery = () => {
@@ -163,8 +163,7 @@ const SwipeDiscovery = () => {
       setError(null);
       setLoading(true);
       
-      const apiUrl = 'https://lionbay-api.onrender.com/api/products';
-      const response = await fetch(apiUrl, {
+      const response = await fetch(`${API_BASE_URL}/products`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -325,8 +324,7 @@ const SwipeDiscovery = () => {
       setTimeout(async () => {
         try {
           // Add product to cart
-          const cartApiUrl = 'https://lionbay-api.onrender.com/api/cart';
-          const cartResponse = await fetch(cartApiUrl, {
+          const cartResponse = await fetch(`${API_BASE_URL}/cart`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

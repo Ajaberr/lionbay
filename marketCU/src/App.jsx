@@ -13,10 +13,7 @@ import AdminDashboard from './components/AdminDashboard';
 import PageTitle from './components/PageTitle';
 import SwipeDiscovery from './components/SwipeDiscovery';
 import DiscoverFeature from './components/DiscoverFeature';
-
-// API Base URL Configuration
-const API_BASE_URL = 'https://lionbay-api.onrender.com/api';
-const SOCKET_URL = 'https://lionbay-api.onrender.com';
+import { API_BASE_URL, SOCKET_URL } from './config';
 
 // Define product categories for consistency
 const PRODUCT_CATEGORIES = [
@@ -199,22 +196,10 @@ export function CartProvider({ children }) {
     if (!isAuthenticated) return;
     
     try {
-      // Use the full API URL instead of relative path
-      const response = await fetch(`${API_BASE_URL}/cart/count`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
+      const response = await authAxios.get('/cart/count');
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      console.log("Cart count received:", data);
-      
-      if (data && data.count !== undefined) {
-        setCartCount(data.count);
+      if (response.data && response.data.count !== undefined) {
+        setCartCount(response.data.count);
       }
     } catch (error) {
       console.error('Error fetching cart count:', error);
@@ -316,13 +301,11 @@ function CartCount() {
 }
 
 export function HeadBar() {
+  const { isAuthenticated, currentUser, logout, authAxios } = useAuth();
+  const { hasUnreadMessages } = useMessages();
+  const [profileData, setProfileData] = useState({ fullName: '', profileImage: '' });
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { isAuthenticated, logout, currentUser, isVerified } = useAuth();
-  const [profileData, setProfileData] = useState({
-    fullName: '',
-    profileImage: ''
-  });
   
   const handleResize = () => {
     setWindowWidth(window.innerWidth);
@@ -332,21 +315,13 @@ export function HeadBar() {
   useEffect(() => {
     if (isAuthenticated && currentUser) {
       const fetchProfileData = async () => {
+        if (!isAuthenticated) return;
+        
         try {
-          const response = await fetch(`${API_BASE_URL}/users/profile`, {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
-          });
+          const response = await authAxios.get('/users/profile');
           
-          if (response.ok) {
-            const data = await response.json();
-            if (data) {
-              setProfileData({
-                fullName: data.full_name || '',
-                profileImage: data.profile_image || ''
-              });
-            }
+          if (response.data) {
+            setProfileData(response.data);
           }
         } catch (error) {
           console.error('Error fetching profile data:', error);
@@ -355,7 +330,7 @@ export function HeadBar() {
       
       fetchProfileData();
     }
-  }, [isAuthenticated, currentUser]);
+  }, [isAuthenticated, currentUser, authAxios]);
   
   useEffect(() => {
     window.addEventListener('resize', handleResize);
@@ -365,7 +340,7 @@ export function HeadBar() {
   }, []);
   
   const toggleSidebar = () => {
-    setMobileMenuOpen(!mobileMenuOpen);
+    setSidebarOpen(!sidebarOpen);
   };
   
   return (
@@ -419,10 +394,10 @@ export function HeadBar() {
       
       {/* Mobile Sidebar */}
       <MobileSidebar 
-        isOpen={mobileMenuOpen}
-        onClose={() => setMobileMenuOpen(false)}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
         isAuthenticated={isAuthenticated}
-        isVerified={isVerified}
+        isVerified={isAuthenticated}
         onLogout={logout}
       />
     </div>
@@ -463,7 +438,7 @@ function SignInPage() {
     setError(null);
     
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/verify-email`, { email });
+      const response = await axios.post(`${API_BASE_URL}/auth/send-verification`, { email });
       setCodeSent(true);
       
       // For development, auto-fill the code if returned in response
@@ -489,18 +464,18 @@ function SignInPage() {
     setError(null);
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/verify-code`, {
+      const response = await axios.post(`${API_BASE_URL}/auth/verify-email`, {
         email,
-        code: verificationCode
+        verificationCode
       });
       
       // Check if this is an admin email
       const isAdmin = ['admin@lionbay.com', 'support@lionbay.com'].includes(email);
       
       const userData = {
-        userId: response.data.userId,
+        userId: response.data.user.id,
         email: email,
-        isAdmin: isAdmin || response.data.isAdmin
+        isAdmin: isAdmin || response.data.user.isAdmin
       };
       
       console.log('User authenticated:', userData);
@@ -509,7 +484,7 @@ function SignInPage() {
       navigate('/home');
     } catch (error) {
       console.error('Verification error:', error.response?.data || error.message);
-      setError('Invalid verification code. Please try again.');
+      setError(error.response?.data?.error || 'Invalid verification code. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -625,6 +600,7 @@ function SignInPage() {
 }
 
 function MarketPage() {
+  const { authAxios } = useAuth();
   const [priceRange, setPriceRange] = useState([10, 100000]);
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [sortBy, setSortBy] = useState('featured');
@@ -637,7 +613,7 @@ function MarketPage() {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const response = await axios.get(`${API_BASE_URL}/products`);
+        const response = await authAxios.get('/products');
         // Sort products by creation date, newest first
         const sortedProducts = response.data.sort((a, b) => 
           new Date(b.created_at) - new Date(a.created_at)
@@ -659,7 +635,7 @@ function MarketPage() {
     fetchProducts();
     const interval = setInterval(fetchProducts, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [authAxios]);
 
   // Filter functions
   const handleCategoryChange = (category) => {
@@ -901,21 +877,22 @@ function ProductDetailPage() {
 
   useEffect(() => {
     const fetchProduct = async () => {
+      setLoading(true);
       try {
-        console.log(`Fetching product details for ID: ${id}`);
-        const response = await axios.get(`${API_BASE_URL}/products/${id}`);
+        const response = await authAxios.get(`/products/${id}`);
         setProduct(response.data);
-        console.log("Product data received:", response.data);
-      } catch (err) {
-        console.error('Error fetching product details:', err);
-        setError('Failed to load product details. Product may not exist.');
+        // Set document title
+        document.title = `${response.data.name} | Lion Bay`;
+      } catch (error) {
+        console.error('Error fetching product details:', error);
+        setError('Failed to load product details');
       } finally {
         setLoading(false);
       }
     };
 
     fetchProduct();
-  }, [id]);
+  }, [id, authAxios]);
 
   const handleContactSeller = async () => {
     if (!isAuthenticated) {
@@ -2949,7 +2926,7 @@ function ProductManagementPage() {
 }
 
 function MobileSidebar({ isOpen, onClose, isAuthenticated, isVerified, onLogout }) {
-  const { currentUser } = useAuth();
+  const { currentUser, authAxios } = useAuth();
   const [profileData, setProfileData] = useState({
     fullName: '',
     profileImage: ''
@@ -2959,21 +2936,13 @@ function MobileSidebar({ isOpen, onClose, isAuthenticated, isVerified, onLogout 
   useEffect(() => {
     if (isOpen && isAuthenticated && currentUser) {
       const fetchProfileData = async () => {
+        if (!isAuthenticated) return;
+        
         try {
-          const response = await fetch(`${API_BASE_URL}/users/profile`, {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
-          });
+          const response = await authAxios.get('/users/profile');
           
-          if (response.ok) {
-            const data = await response.json();
-            if (data) {
-              setProfileData({
-                fullName: data.full_name || '',
-                profileImage: data.profile_image || ''
-              });
-            }
+          if (response.data) {
+            setProfileData(response.data);
           }
         } catch (error) {
           console.error('Error fetching profile data:', error);
@@ -2982,7 +2951,7 @@ function MobileSidebar({ isOpen, onClose, isAuthenticated, isVerified, onLogout 
       
       fetchProfileData();
     }
-  }, [isOpen, isAuthenticated, currentUser]);
+  }, [isOpen, isAuthenticated, currentUser, authAxios]);
   
   return (
     <>

@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { API_BASE_URL } from '../config';
 import './LoginPage.css';
 
-// API Base URL Configuration
-const API_BASE_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://lionbay-api.onrender.com/api'
-  : 'http://localhost:3003/api';
+// Configure axios defaults
+axios.defaults.withCredentials = true;
+axios.defaults.headers.common['Content-Type'] = 'application/json';
 
 function LoginPage({ setIsAuthenticated }) {
   const [email, setEmail] = useState('');

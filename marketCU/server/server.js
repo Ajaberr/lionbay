@@ -22,7 +22,14 @@ const { cleanupInactiveChats } = require('./chatCleanup');
 const app = express();
 const server = http.createServer(app);
 
-// Improved CORS configuration to handle both local and production environments
+// Load environment variables
+require('dotenv').config();
+
+// Server configuration
+const PORT = process.env.PORT || 3003;
+const API_URL = process.env.API_URL || 'http://localhost:3003/api';
+
+// CORS configuration
 const allowedOrigins = process.env.NODE_ENV === 'production' 
   ? [
       'https://lionbay-api.onrender.com',
@@ -30,8 +37,10 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
       'https://lionbay.onrender.com',
       process.env.FRONTEND_URL
     ].filter(Boolean)
-  : ['http://localhost:3000', 'http://localhost:3003'];
+  : (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3003,http://localhost:5173').split(',');
 
+console.log('Environment:', process.env.NODE_ENV);
+console.log('API URL:', API_URL);
 console.log('Allowed CORS origins:', allowedOrigins);
 
 // Configure CORS with more detailed options
@@ -48,9 +57,14 @@ app.use(cors({
     return callback(null, true);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
+
+// Handle preflight requests
+app.options('*', cors());
 
 // Configure Socket.IO with CORS settings
 const io = new Server(server, {
@@ -1603,7 +1617,6 @@ app.post('/api/auth/send-verification', async (req, res) => {
 });
 
 // Start the server
-const PORT = process.env.PORT || 3003;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 }); 

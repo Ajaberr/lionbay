@@ -28,5 +28,5 @@ if [ -d "build" ]; then
     echo "You can now deploy these files to your hosting service."
 else
     echo "Build failed! Please check for errors."
-    exit 1
-fi 
+  exit 1
+fi

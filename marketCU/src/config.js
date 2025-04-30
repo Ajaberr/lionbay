@@ -8,11 +8,16 @@
 // Determine if we're in production
 const isProduction = import.meta.env.PROD;
 
-// Base API URL - using Render backend URL for both environments
-export const API_BASE_URL = 'https://lionbay-api.onrender.com';
+// Environment variables with fallbacks
+const apiBasePrefix = isProduction
+  ? 'https://lionbay-api.onrender.com'
+  : import.meta.env.VITE_API_BASE_URL || 'http://localhost:3003';
 
-// Socket.IO URL - using Render backend URL for both environments
-export const SOCKET_URL = 'https://lionbay-api.onrender.com';
+// Base API URL
+export const API_BASE_URL = `${apiBasePrefix}/api`;
+
+// Socket.IO URL
+export const SOCKET_URL = apiBasePrefix;
 
 // Debug mode toggle
 export const DEBUG_MODE = !isProduction;
@@ -20,6 +25,13 @@ export const DEBUG_MODE = !isProduction;
 // Other configuration constants
 export const APP_NAME = 'Lion Bay';
 export const COLUMBIA_EMAIL_DOMAIN = 'columbia.edu';
+
+// Print configuration in development
+if (!isProduction) {
+  console.log('Environment:', import.meta.env.MODE);
+  console.log('API Base URL:', API_BASE_URL);
+  console.log('Socket URL:', SOCKET_URL);
+}
 
 // Logging utility that respects debug mode
 export const logger = {
