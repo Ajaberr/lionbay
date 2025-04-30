@@ -1477,6 +1477,11 @@ app.get('/api/users/profile', authenticateToken, async (req, res) => {
   }
 });
 
+// Add this before any other routes
+app.get('/', (req, res) => {
+  res.json({ message: 'Server is running', status: 'ok' });
+});
+
 // Start the server
 const PORT = process.env.PORT || 3003;
 server.listen(PORT, () => {

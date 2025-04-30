@@ -8,16 +8,11 @@
 // Determine if we're in production
 const isProduction = import.meta.env.PROD;
 
-// Base API URL - in production this uses the same origin,
-// in development it uses localhost:3003
-export const API_BASE_URL = isProduction 
-  ? 'https://lionbay-api.onrender.com' // Your Render backend URL
-  : 'http://localhost:3003';
+// Base API URL - using Render backend URL for both environments
+export const API_BASE_URL = 'https://lionbay-api.onrender.com';
 
-// Socket.IO URL - follows the same pattern as API_BASE_URL
-export const SOCKET_URL = isProduction
-  ? 'https://lionbay-api.onrender.com' // Your Render backend URL
-  : 'http://localhost:3003';
+// Socket.IO URL - using Render backend URL for both environments
+export const SOCKET_URL = 'https://lionbay-api.onrender.com';
 
 // Debug mode toggle
 export const DEBUG_MODE = !isProduction;
