@@ -33,9 +33,8 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
   ? [
   'https://lionbay-api.onrender.com',
   'https://lionbay.com',
-  'https://lionbay.onrender.com',
   'https://lionbay.org',
-  'https://www.lionbay.org',
+      'https://lionbay.onrender.com',
   process.env.FRONTEND_URL
     ].filter(Boolean)
   : (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3003,http://localhost:5173').split(',');
