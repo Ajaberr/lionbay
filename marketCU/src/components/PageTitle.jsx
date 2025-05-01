@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { API_BASE_URL } from '../config';
 
-// API Base URL is now imported from config file
-// This will use the updated domain automatically
+// API Base URL Configuration
+const API_BASE_URL = 'https://lionbay-api.onrender.com/api';
 
 const PageTitle = () => {
   const location = useLocation();

@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { io } from 'socket.io-client';
 import '../styles/AdminDashboard.css';
-import { SOCKET_URL } from '../config';
+
+const SOCKET_URL = 'https://lionbay-api.onrender.com';
 
 const AdminDashboard = () => {
   const { currentUser, authAxios } = useAuth();
@@ -17,44 +18,18 @@ const AdminDashboard = () => {
   const [socket, setSocket] = useState(null);
   const [verificationEmail, setVerificationEmail] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
-  const [error, setError] = useState(null);
-
-  // Verify admin status
-  useEffect(() => {
-    console.log("Current user in AdminDashboard:", currentUser);
-    
-    // Add explicit check for admin status and redirect if not admin
-    if (currentUser && !currentUser.isAdmin) {
-      console.error("User is not an admin, redirecting to home");
-      setError("You do not have admin privileges.");
-      navigate('/');
-      return;
-    }
-    
-    if (!currentUser) {
-      console.error("No user logged in, redirecting to login");
-      navigate('/login');
-      return;
-    }
-  }, [currentUser, navigate]);
 
   // Initialize socket connection for admin
   useEffect(() => {
-    if (!currentUser || !currentUser.isAdmin) return;
+    if (!currentUser) return;
 
     const token = localStorage.getItem('token');
-    console.log('Admin connecting to socket server at:', SOCKET_URL);
     const newSocket = io(SOCKET_URL, {
-      auth: { token },
-      transports: ['websocket', 'polling'] // Try websocket first, then fallback to polling
+      auth: { token }
     });
 
     newSocket.on('connect', () => {
       console.log('Admin connected to socket');
-    });
-    
-    newSocket.on('connect_error', (err) => {
-      console.error('Socket connection error:', err.message);
     });
 
     newSocket.on('new_help_message', (message) => {
@@ -224,316 +199,398 @@ const AdminDashboard = () => {
            date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
   };
 
+  // If not an admin, redirect to home
+  useEffect(() => {
+    if (currentUser && !currentUser.isAdmin) {
+      navigate('/home');
+    }
+  }, [currentUser, navigate]);
+
   return (
     <div className="admin-dashboard">
-      {error && (
-        <div className="admin-error-message">
-          <p>{error}</p>
+      <div className="admin-sidebar">
+        <div className="admin-sidebar-header">
+          <h2>Admin Panel</h2>
         </div>
-      )}
+        <nav className="admin-nav">
+          <button 
+            className={`admin-nav-item ${activeTab === 'overview' ? 'active' : ''}`}
+            onClick={() => setActiveTab('overview')}
+          >
+            Dashboard Overview
+          </button>
+          <button 
+            className={`admin-nav-item ${activeTab === 'users' ? 'active' : ''}`}
+            onClick={() => setActiveTab('users')}
+          >
+            User Management
+          </button>
+          <button 
+            className={`admin-nav-item ${activeTab === 'products' ? 'active' : ''}`}
+            onClick={() => setActiveTab('products')}
+          >
+            Products
+          </button>
+          <button 
+            className={`admin-nav-item ${activeTab === 'support' ? 'active' : ''}`}
+            onClick={() => setActiveTab('support')}
+          >
+            Customer Support
+          </button>
+          <button 
+            className={`admin-nav-item ${activeTab === 'verification' ? 'active' : ''}`}
+            onClick={() => setActiveTab('verification')}
+          >
+            Verification Tools
+          </button>
+        </nav>
+      </div>
       
-      {loading && !error ? (
-        <div className="admin-loading">
-          <p>Loading admin dashboard...</p>
-        </div>
-      ) : (
-        currentUser && currentUser.isAdmin && (
+      <div className="admin-content">
+        {loading && !dashboardData ? (
+          <div className="admin-loading">Loading dashboard data...</div>
+        ) : (
           <>
-            <h1>Admin Dashboard</h1>
-            <div className="admin-info">
-              <p>Logged in as: {currentUser.email}</p>
-            </div>
-            
-            <div className="admin-tabs">
-              <button 
-                className={activeTab === 'overview' ? 'active' : ''} 
-                onClick={() => setActiveTab('overview')}
-              >
-                Overview
-              </button>
-              <button 
-                className={activeTab === 'support' ? 'active' : ''} 
-                onClick={() => setActiveTab('support')}
-              >
-                Support
-              </button>
-              <button 
-                className={activeTab === 'tools' ? 'active' : ''} 
-                onClick={() => setActiveTab('tools')}
-              >
-                Admin Tools
-              </button>
-            </div>
-            
-            <div className="admin-content">
-              {activeTab === 'overview' && dashboardData && (
-                <div className="admin-overview">
-                  <h1>Dashboard Overview</h1>
-                  
-                  <div className="admin-stats-grid">
-                    <div className="admin-stat-card">
-                      <h3>Users</h3>
-                      <div className="admin-stat-number">{dashboardData.stats.users.total_users}</div>
-                      <div className="admin-stat-subtext">
-                        +{dashboardData.stats.users.new_users_last_week} new this week
-                      </div>
-                    </div>
-                    
-                    <div className="admin-stat-card">
-                      <h3>Products</h3>
-                      <div className="admin-stat-number">{dashboardData.stats.products.total_products}</div>
-                      <div className="admin-stat-subtext">
-                        +{dashboardData.stats.products.new_products_last_week} new this week
-                      </div>
-                    </div>
-                    
-                    <div className="admin-stat-card">
-                      <h3>Chats</h3>
-                      <div className="admin-stat-number">{dashboardData.stats.chats.total_chats}</div>
-                      <div className="admin-stat-subtext">
-                        +{dashboardData.stats.chats.new_chats_last_week} new this week
-                      </div>
-                    </div>
-                    
-                    <div className="admin-stat-card">
-                      <h3>Messages</h3>
-                      <div className="admin-stat-number">{dashboardData.stats.messages.total_messages}</div>
-                      <div className="admin-stat-subtext">
-                        +{dashboardData.stats.messages.new_messages_last_week} new this week
-                      </div>
+            {activeTab === 'overview' && dashboardData && (
+              <div className="admin-overview">
+                <h1>Dashboard Overview</h1>
+                
+                <div className="admin-stats-grid">
+                  <div className="admin-stat-card">
+                    <h3>Users</h3>
+                    <div className="admin-stat-number">{dashboardData.stats.users.total_users}</div>
+                    <div className="admin-stat-subtext">
+                      +{dashboardData.stats.users.new_users_last_week} new this week
                     </div>
                   </div>
                   
-                  <div className="admin-recent-section">
-                    <h2>Recent Users</h2>
-                    <div className="admin-table-container">
-                      <table className="admin-table">
-                        <thead>
-                          <tr>
-                            <th>Email</th>
-                            <th>Verified</th>
-                            <th>Joined</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {dashboardData.recentUsers.map(user => (
-                            <tr key={user.id}>
-                              <td>{user.email}</td>
-                              <td>{user.email_verified ? '✓' : '✗'}</td>
-                              <td>{formatDate(user.created_at)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  <div className="admin-stat-card">
+                    <h3>Products</h3>
+                    <div className="admin-stat-number">{dashboardData.stats.products.total_products}</div>
+                    <div className="admin-stat-subtext">
+                      +{dashboardData.stats.products.new_products_last_week} new this week
                     </div>
                   </div>
                   
-                  <div className="admin-recent-section">
-                    <h2>Recent Products</h2>
-                    <div className="admin-table-container">
-                      <table className="admin-table">
-                        <thead>
-                          <tr>
-                            <th>Name</th>
-                            <th>Price</th>
-                            <th>Category</th>
-                            <th>Seller</th>
-                            <th>Posted</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {dashboardData.recentProducts.map(product => (
-                            <tr key={product.id}>
-                              <td>{product.name}</td>
-                              <td>${parseFloat(product.price).toFixed(2)}</td>
-                              <td>{product.category}</td>
-                              <td>{product.seller_email}</td>
-                              <td>{formatDate(product.created_at)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  <div className="admin-stat-card">
+                    <h3>Chats</h3>
+                    <div className="admin-stat-number">{dashboardData.stats.chats.total_chats}</div>
+                    <div className="admin-stat-subtext">
+                      +{dashboardData.stats.chats.new_chats_last_week} new this week
+                    </div>
+                  </div>
+                  
+                  <div className="admin-stat-card">
+                    <h3>Messages</h3>
+                    <div className="admin-stat-number">{dashboardData.stats.messages.total_messages}</div>
+                    <div className="admin-stat-subtext">
+                      +{dashboardData.stats.messages.new_messages_last_week} new this week
                     </div>
                   </div>
                 </div>
-              )}
-              
-              {activeTab === 'support' && (
-                <div className="admin-support">
-                  <h1>Customer Support</h1>
+                
+                <div className="admin-recent-section">
+                  <h2>Recent Users</h2>
+                  <div className="admin-table-container">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Email</th>
+                          <th>Verified</th>
+                          <th>Joined</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dashboardData.recentUsers.map(user => (
+                          <tr key={user.id}>
+                            <td>{user.email}</td>
+                            <td>{user.email_verified ? '✓' : '✗'}</td>
+                            <td>{formatDate(user.created_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                
+                <div className="admin-recent-section">
+                  <h2>Recent Products</h2>
+                  <div className="admin-table-container">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Price</th>
+                          <th>Category</th>
+                          <th>Seller</th>
+                          <th>Posted</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dashboardData.recentProducts.map(product => (
+                          <tr key={product.id}>
+                            <td>{product.name}</td>
+                            <td>${parseFloat(product.price).toFixed(2)}</td>
+                            <td>{product.category}</td>
+                            <td>{product.seller_email}</td>
+                            <td>{formatDate(product.created_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {activeTab === 'support' && (
+              <div className="admin-support">
+                <h1>Customer Support</h1>
+                
+                <div className="admin-support-container">
+                  <div className="admin-support-users">
+                    <h3>Support Conversations</h3>
+                    
+                    {helpMessages.length === 0 ? (
+                      <div className="admin-support-empty">
+                        No support conversations yet.
+                      </div>
+                    ) : (
+                      <div className="admin-support-user-list">
+                        {/* Get unique user IDs */}
+                        {[...new Set(helpMessages.map(msg => 
+                          msg.is_from_admin ? msg.to_user_id : msg.user_id
+                        ))].map(userId => {
+                          // Get messages for this user (both from and to)
+                          const userMessages = helpMessages.filter(msg => 
+                            msg.user_id === userId || 
+                            (msg.is_from_admin && msg.to_user_id === userId)
+                          );
+                          
+                          // Find a user message to get the email
+                          const userMsg = userMessages.find(msg => !msg.is_from_admin && msg.user_id === userId);
+                          
+                          // If we can't find a message from the user, use the first admin message to this user
+                          const adminMsg = userMessages.find(msg => msg.is_from_admin && msg.to_user_id === userId);
+                          
+                          const userEmail = userMsg ? userMsg.user_email : 
+                                         (adminMsg ? adminMsg.to_user_email : 'Unknown User');
+                          
+                          // Get latest message
+                          const latestMessage = [...userMessages].sort((a, b) => 
+                            new Date(b.created_at) - new Date(a.created_at)
+                          )[0];
+                          
+                          // Skip if we don't have a proper conversation
+                          if (!latestMessage) return null;
+                          
+                          return (
+                            <div 
+                              key={userId}
+                              className={`admin-support-user-item ${selectedUser === userId ? 'active' : ''}`}
+                              onClick={() => setSelectedUser(userId)}
+                            >
+                              <div className="admin-support-user-email">{userEmail}</div>
+                              <div className="admin-support-preview">
+                                {latestMessage.message.substring(0, 40)}
+                                {latestMessage.message.length > 40 ? '...' : ''}
+                              </div>
+                              <div className="admin-support-time">
+                                {formatDate(latestMessage.created_at)}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                   
-                  <div className="admin-support-container">
-                    <div className="admin-support-users">
-                      <h3>Support Conversations</h3>
-                      
-                      {helpMessages.length === 0 ? (
-                        <div className="admin-support-empty">
-                          No support conversations yet.
+                  <div className="admin-support-chat">
+                    {selectedUser ? (
+                      <>
+                        <div className="admin-support-chat-header">
+                          <h3>
+                            {
+                              helpMessages.find(msg => 
+                                !msg.is_from_admin && msg.user_id === selectedUser
+                              )?.user_email || 
+                              'User'
+                            }
+                          </h3>
                         </div>
-                      ) : (
-                        <div className="admin-support-user-list">
-                          {/* Get unique user IDs */}
-                          {[...new Set(helpMessages.map(msg => 
-                            msg.is_from_admin ? msg.to_user_id : msg.user_id
-                          ))].map(userId => {
-                            // Get messages for this user (both from and to)
-                            const userMessages = helpMessages.filter(msg => 
-                              msg.user_id === userId || 
-                              (msg.is_from_admin && msg.to_user_id === userId)
-                            );
-                            
-                            // Find a user message to get the email
-                            const userMsg = userMessages.find(msg => !msg.is_from_admin && msg.user_id === userId);
-                            
-                            // If we can't find a message from the user, use the first admin message to this user
-                            const adminMsg = userMessages.find(msg => msg.is_from_admin && msg.to_user_id === userId);
-                            
-                            const userEmail = userMsg ? userMsg.user_email : 
-                                           (adminMsg ? adminMsg.to_user_email : 'Unknown User');
-                            
-                            // Get latest message
-                            const latestMessage = [...userMessages].sort((a, b) => 
-                              new Date(b.created_at) - new Date(a.created_at)
-                            )[0];
-                            
-                            // Skip if we don't have a proper conversation
-                            if (!latestMessage) return null;
-                            
-                            return (
+                        
+                        <div className="admin-support-messages">
+                          {helpMessages
+                            .filter(msg => 
+                              msg.user_id === selectedUser || 
+                              (msg.is_from_admin && msg.to_user_id === selectedUser)
+                            )
+                            .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+                            .map(msg => (
                               <div 
-                                key={userId}
-                                className={`admin-support-user-item ${selectedUser === userId ? 'active' : ''}`}
-                                onClick={() => setSelectedUser(userId)}
+                                key={msg.id}
+                                className={`admin-support-message ${msg.is_from_admin ? 'admin' : 'user'}`}
                               >
-                                <div className="admin-support-user-email">{userEmail}</div>
-                                <div className="admin-support-preview">
-                                  {latestMessage.message.substring(0, 40)}
-                                  {latestMessage.message.length > 40 ? '...' : ''}
+                                <div className="admin-support-message-content">
+                                  {msg.message}
                                 </div>
-                                <div className="admin-support-time">
-                                  {formatDate(latestMessage.created_at)}
+                                <div className="admin-support-message-time">
+                                  {formatDate(msg.created_at)}
                                 </div>
                               </div>
-                            );
-                          })}
+                            ))
+                          }
                         </div>
-                      )}
-                    </div>
-                    
-                    <div className="admin-support-chat">
-                      {selectedUser ? (
-                        <>
-                          <div className="admin-support-chat-header">
-                            <h3>
-                              {
-                                helpMessages.find(msg => 
-                                  !msg.is_from_admin && msg.user_id === selectedUser
-                                )?.user_email || 
-                                'User'
+                        
+                        <div className="admin-support-input">
+                          <textarea
+                            value={response}
+                            onChange={(e) => {
+                              setResponse(e.target.value);
+                              adjustTextareaHeight(e);
+                            }}
+                            placeholder="Type your response..."
+                            className="admin-support-input-field"
+                            disabled={!selectedUser}
+                            onKeyDown={(e) => {
+                              // Submit on Enter (without Shift)
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSendResponse(e);
                               }
-                            </h3>
-                          </div>
-                          
-                          <div className="admin-support-messages">
-                            {helpMessages
-                              .filter(msg => 
-                                msg.user_id === selectedUser || 
-                                (msg.is_from_admin && msg.to_user_id === selectedUser)
-                              )
-                              .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-                              .map(msg => (
-                                <div 
-                                  key={msg.id}
-                                  className={`admin-support-message ${msg.is_from_admin ? 'admin' : 'user'}`}
-                                >
-                                  <div className="admin-support-message-content">
-                                    {msg.message}
-                                  </div>
-                                  <div className="admin-support-message-time">
-                                    {formatDate(msg.created_at)}
-                                  </div>
-                                </div>
-                              ))
-                            }
-                          </div>
-                          
-                          <div className="admin-support-input">
-                            <textarea
-                              value={response}
-                              onChange={(e) => {
-                                setResponse(e.target.value);
-                                adjustTextareaHeight(e);
-                              }}
-                              placeholder="Type your response..."
-                              className="admin-support-input-field"
-                              disabled={!selectedUser}
-                              onKeyDown={(e) => {
-                                // Submit on Enter (without Shift)
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                  e.preventDefault();
-                                  handleSendResponse(e);
-                                }
-                              }}
-                              onFocus={adjustTextareaHeight}
-                              rows={1}
-                            />
-                            <button
-                              className="admin-support-send"
-                              onClick={handleSendResponse}
-                              disabled={!selectedUser || !response.trim()}
-                              aria-label="Send response"
-                            >
-                            </button>
-                          </div>
-                        </>
-                      ) : (
-                        <div className="admin-support-no-selection">
-                          <p>Select a conversation from the left to respond.</p>
+                            }}
+                            onFocus={adjustTextareaHeight}
+                            rows={1}
+                          />
+                          <button
+                            className="admin-support-send"
+                            onClick={handleSendResponse}
+                            disabled={!selectedUser || !response.trim()}
+                            aria-label="Send response"
+                          >
+                          </button>
                         </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              {activeTab === 'tools' && (
-                <div className="admin-tools">
-                  <h1>Admin Tools</h1>
-                  
-                  <div className="admin-tools-container">
-                    <div className="admin-tools-item">
-                      <h3>Verification Tools</h3>
-                      <p>Enter a user's email to fetch their current verification code:</p>
-                      
-                      <div className="admin-verification-form">
-                        <input
-                          type="email"
-                          value={verificationEmail}
-                          onChange={(e) => setVerificationEmail(e.target.value)}
-                          placeholder="user@columbia.edu"
-                          className="admin-verification-input"
-                        />
-                        <button 
-                          onClick={handleLookupVerificationCode}
-                          className="admin-verification-button"
-                        >
-                          Lookup Code
-                        </button>
+                      </>
+                    ) : (
+                      <div className="admin-support-no-selection">
+                        <p>Select a conversation from the left to respond.</p>
                       </div>
-                      
-                      {verificationCode && (
-                        <div className="admin-verification-result">
-                          <strong>Verification Code:</strong> {verificationCode}
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+            
+            {activeTab === 'verification' && (
+              <div className="admin-verification">
+                <h1>Verification Tools</h1>
+                
+                <div className="admin-verification-tool">
+                  <h3>Lookup Verification Code</h3>
+                  <p>Enter a user's email to fetch their current verification code:</p>
+                  
+                  <div className="admin-verification-form">
+                    <input
+                      type="email"
+                      value={verificationEmail}
+                      onChange={(e) => setVerificationEmail(e.target.value)}
+                      placeholder="user@columbia.edu"
+                      className="admin-verification-input"
+                    />
+                    <button 
+                      onClick={handleLookupVerificationCode}
+                      className="admin-verification-button"
+                    >
+                      Lookup Code
+                    </button>
+                  </div>
+                  
+                  {verificationCode && (
+                    <div className="admin-verification-result">
+                      <strong>Verification Code:</strong> {verificationCode}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {activeTab === 'users' && dashboardData && (
+              <div className="admin-users">
+                <h1>User Management</h1>
+                
+                <div className="admin-table-container">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Email</th>
+                        <th>Verified</th>
+                        <th>Joined</th>
+                        <th>Products</th>
+                        <th>Admin</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dashboardData.recentUsers.map(user => (
+                        <tr key={user.id}>
+                          <td>{user.email}</td>
+                          <td>{user.email_verified ? '✓' : '✗'}</td>
+                          <td>{formatDate(user.created_at)}</td>
+                          <td>
+                            {dashboardData.recentProducts.filter(p => 
+                              p.seller_email === user.email
+                            ).length}
+                          </td>
+                          <td>{user.email === currentUser.email || ['aaa2485@columbia.edu', 'amj2234@columbia.edu'].includes(user.email) ? '✓' : '✗'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            
+            {activeTab === 'products' && dashboardData && (
+              <div className="admin-products">
+                <h1>Products Management</h1>
+                
+                <div className="admin-table-container">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Price</th>
+                        <th>Category</th>
+                        <th>Seller</th>
+                        <th>Posted</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dashboardData.recentProducts.map(product => (
+                        <tr key={product.id}>
+                          <td>{product.name}</td>
+                          <td>${parseFloat(product.price).toFixed(2)}</td>
+                          <td>{product.category}</td>
+                          <td>{product.seller_email}</td>
+                          <td>{formatDate(product.created_at)}</td>
+                          <td>
+                            <button 
+                              className="admin-button"
+                              onClick={() => navigate(`/market/${product.id}`)}
+                            >
+                              View
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </>
-        )
-      )}
+        )}
+      </div>
     </div>
   );
 };

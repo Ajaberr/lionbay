@@ -4,7 +4,9 @@ import { useAuth } from '../App';
 import axios from 'axios';
 import '../App.css';
 import DiscoverFeature from './DiscoverFeature';
-import { API_BASE_URL } from '../config';
+
+// API Base URL Configuration
+const API_BASE_URL = 'https://lionbay-api.onrender.com/api';
 
 function HomePage() {
   const { isAuthenticated } = useAuth();

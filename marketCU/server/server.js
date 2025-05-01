@@ -31,18 +31,12 @@ const API_URL = process.env.API_URL || 'http://localhost:3003/api';
 // CORS configuration
 const allowedOrigins = process.env.NODE_ENV === 'production' 
   ? [
-    'https://lionbay-api.onrender.com',
-    'https://lionbay.com',
-    'https://lionbay.org',
-    'https://lionbay.onrender.com',
-    process.env.FRONTEND_URL
-  ].filter(Boolean)
-  : [
-    'http://localhost:3000',
-    'http://localhost:3003',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173'
-  ];
+  'https://lionbay-api.onrender.com',
+  'https://lionbay.com',
+      'https://lionbay.onrender.com',
+  process.env.FRONTEND_URL
+    ].filter(Boolean)
+  : (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3003,http://localhost:5173').split(',');
 
 console.log('Environment:', process.env.NODE_ENV);
 console.log('API URL:', API_URL);
@@ -76,8 +70,7 @@ const io = new Server(server, {
   cors: { 
     origin: allowedOrigins,
     methods: ["GET", "POST"],
-    credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    credentials: true
   }
 });
 

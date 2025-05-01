@@ -10,22 +10,14 @@ const isProduction = import.meta.env.PROD;
 
 // Environment variables with fallbacks
 const apiBasePrefix = isProduction
-  ? (import.meta.env.VITE_API_BASE_URL || process.env.VITE_API_BASE_URL || 'https://lionbay.org')
+  ? 'https://lionbay-api.onrender.com'
   : import.meta.env.VITE_API_BASE_URL || 'http://localhost:3003';
 
-// For backward compatibility with old domain
-// This will allow the app to still work with old URLs
-const legacyApiBasePrefix = 'https://lionbay-api.onrender.com';
-
-// Base API URL - try the new domain first, then fall back to legacy if needed
+// Base API URL
 export const API_BASE_URL = `${apiBasePrefix}/api`;
 
 // Socket.IO URL
 export const SOCKET_URL = apiBasePrefix;
-
-// Legacy URLs for backward compatibility
-export const LEGACY_API_BASE_URL = `${legacyApiBasePrefix}/api`;
-export const LEGACY_SOCKET_URL = legacyApiBasePrefix;
 
 // Debug mode toggle
 export const DEBUG_MODE = !isProduction;
