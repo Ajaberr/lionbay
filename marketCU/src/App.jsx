@@ -139,7 +139,8 @@ export function AuthProvider({ children }) {
     // Make sure we store the isAdmin flag in the user data
     const userWithAdminFlag = {
       ...userData,
-      isAdmin: userData.isAdmin || ['admin@lionbay.com', 'support@lionbay.com'].includes(userData.email)
+      // Check backend value OR if email is in the specific admin list
+      isAdmin: userData.isAdmin || ['amj2234@columbia.edu', 'aa2485@columbia.edu'].includes(userData.email)
     };
     
     // Ensure userId is set (use id if userId is not available)
