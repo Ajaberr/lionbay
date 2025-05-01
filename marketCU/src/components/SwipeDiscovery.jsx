@@ -182,12 +182,25 @@ const SwipeDiscovery = () => {
         return;
       }
       
-      // Filter out swiped products and user's own products
-      const filteredProducts = data.filter(product => 
-        !swipedRight.includes(product.id) && 
-        !swipedLeft.includes(product.id) &&
-        (!currentUser || product.seller_id !== currentUser.userId)
-      );
+      // Filter out products:
+      // 1. Products the user has already swiped on
+      // 2. User's own products (using currentUser.userId)
+      const filteredProducts = data.filter(product => {
+        // Skip products user has already swiped on
+        if (swipedRight.includes(product.id) || swipedLeft.includes(product.id)) {
+          return false;
+        }
+        
+        // Skip user's own products
+        if (isAuthenticated && currentUser && product.seller_id === currentUser.userId) {
+          console.log(`Filtering out user's own product: ${product.id}`);
+          return false;
+        }
+        
+        return true;
+      });
+      
+      console.log(`Filtered ${data.length} products down to ${filteredProducts.length} available products`);
       
       if (filteredProducts.length === 0) {
         setError("You've already viewed all available products. Check back later for new listings!");

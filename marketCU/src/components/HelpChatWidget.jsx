@@ -1,13 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
-import { useAuth, useMessages } from '../App';
+import { useAuth } from '../App';
 import { io } from 'socket.io-client';
 import '../styles/HelpChatWidget.css';
+import '../Chat.css'
+import '../styles/App.css';
+import '../App.css';
+
 
 const SOCKET_URL = 'https://lionbay-api.onrender.com';
 
 const HelpChatWidget = () => {
   const { currentUser, authAxios } = useAuth();
-  const { incrementUnreadCount } = useMessages();
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState([]);
@@ -33,9 +36,7 @@ const HelpChatWidget = () => {
       // Only increment unread counter if chat is not open and message is truly new
       const isNewMessage = !localStorage.getItem(`msg_seen_${response.id}`);
       
-      if (!isOpen && isNewMessage) {
-        incrementUnreadCount();
-      }
+     
       
       setMessages(prev => {
         // Check if this message already exists by ID
@@ -70,7 +71,7 @@ const HelpChatWidget = () => {
     return () => {
       if (newSocket) newSocket.disconnect();
     };
-  }, [currentUser, isOpen, incrementUnreadCount]);
+  }, [currentUser, isOpen]);
 
   // Load persisted messages on component mount and fetch new ones when chat is opened
   useEffect(() => {
@@ -89,7 +90,6 @@ const HelpChatWidget = () => {
         fetchMessages();
 
         // Reset unread counter when opening
-        incrementUnreadCount();
         
         // Mark all messages as seen
         const savedMessages = JSON.parse(localStorage.getItem('helpChatMessages') || '[]');
@@ -107,7 +107,7 @@ const HelpChatWidget = () => {
         }, 300);
       }
     }
-  }, [isOpen, currentUser, incrementUnreadCount]);
+  }, [isOpen, currentUser]);
 
   // Scroll to bottom when messages change
   useEffect(() => {

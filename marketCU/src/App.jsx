@@ -1,7 +1,8 @@
 import { useState, useContext, createContext, useEffect, useRef, Fragment as Fragment2 } from 'react';
 import { BrowserRouter as Router, Route, Routes, Link, Navigate, useParams, useNavigate } from 'react-router-dom';
+import './styles/App.css';
 import './App.css';
-import './Chat.css';
+import './styles/ProductDetail.css';
 import logo from './assets/lion-logo.svg';
 import axios from 'axios';
 import { io } from 'socket.io-client';
@@ -47,13 +48,29 @@ export function AuthProvider({ children }) {
     let storedUser;
     try {
       storedUser = JSON.parse(localStorage.getItem('user'));
+      console.log("Loading stored user data:", storedUser);
+      
+      // Make sure userId is defined
+      if (storedUser && !storedUser.userId && storedUser.id) {
+        console.log("Converting id to userId for consistency");
+        storedUser.userId = storedUser.id;
+      }
+      
+      // Check for required fields
+      if (storedUser && !storedUser.userId) {
+        console.warn("Stored user data missing userId:", storedUser);
+      }
     } catch (e) {
+      console.error("Error parsing stored user data:", e);
       // Ignore parsing errors
     }
     
     if (storedToken && storedUser) {
+      console.log("Using stored authentication data, token exists and user:", storedUser?.userId);
       setToken(storedToken);
       setCurrentUser(storedUser);
+    } else {
+      console.log("No stored authentication data or missing user/token");
     }
     
     setLoading(false);
@@ -69,9 +86,15 @@ export function AuthProvider({ children }) {
       
       const { token, user } = response.data;
       
+      // Ensure userId is set (use id if userId is not available)
+      if (user && !user.userId && user.id) {
+        user.userId = user.id;
+      }
+      
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
       
+      console.log("User logged in successfully:", user);
       setToken(token);
       setCurrentUser(user);
       
@@ -92,9 +115,15 @@ export function AuthProvider({ children }) {
       
       const { token, user } = response.data;
       
+      // Ensure userId is set (use id if userId is not available)
+      if (user && !user.userId && user.id) {
+        user.userId = user.id;
+      }
+      
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
       
+      console.log("User registered successfully:", user);
       setToken(token);
       setCurrentUser(user);
       
@@ -113,6 +142,12 @@ export function AuthProvider({ children }) {
       isAdmin: userData.isAdmin || ['admin@lionbay.com', 'support@lionbay.com'].includes(userData.email)
     };
     
+    // Ensure userId is set (use id if userId is not available)
+    if (userWithAdminFlag && !userWithAdminFlag.userId && userWithAdminFlag.id) {
+      userWithAdminFlag.userId = userWithAdminFlag.id;
+    }
+    
+    console.log("User verified and logged in:", userWithAdminFlag);
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(userWithAdminFlag));
     
@@ -226,72 +261,10 @@ export function CartProvider({ children }) {
   );
 }
 
-// Create a messages context for unread message count
-const MessagesContext = createContext();
-
-export function useMessages() {
-  return useContext(MessagesContext);
-}
-
-export function MessagesProvider({ children }) {
-  const [hasUnread, setHasUnread] = useState(false);
-  const { authAxios, isAuthenticated } = useAuth();
-  
-  const checkUnreadMessages = async () => {
-    if (!isAuthenticated) return;
-    
-    try {
-      const response = await authAxios.get('/chats/has-unread');
-      
-      if (response.data && response.data.hasUnread !== undefined) {
-        setHasUnread(response.data.hasUnread);
-      }
-    } catch (error) {
-      console.error('Error checking unread messages:', error);
-    }
-  };
-
-  const markAllAsRead = async (chatId) => {
-    if (!isAuthenticated) return;
-    
-    try {
-      await authAxios.post(`/chats/${chatId}/mark-read`);
-      setHasUnread(false);
-    } catch (error) {
-      console.error('Error marking messages as read:', error);
-    }
-  };
-  
-  // New function to indicate new unread messages
-  const setHasUnreadMessages = (value = true) => {
-    setHasUnread(value);
-  };
-  
-  useEffect(() => {
-    if (isAuthenticated) {
-      checkUnreadMessages();
-      
-      // Set up polling to check for unread messages
-      const interval = setInterval(checkUnreadMessages, 15000); // Every 15 seconds
-      
-      return () => clearInterval(interval);
-    } else {
-      setHasUnread(false); // Reset when logged out
-    }
-  }, [isAuthenticated]);
-  
-  return (
-    <MessagesContext.Provider value={{ hasUnread, markAllAsRead, setHasUnreadMessages }}>
-      {children}
-    </MessagesContext.Provider>
-  );
-}
-
 function MessageCount() {
-  const { hasUnread } = useMessages();
-  
-  // Return a dot indicator when there are unread messages
-  return hasUnread ? '•' : '';
+  // The useMessages hook has been removed, so we'll use a static badge instead
+  // Return a static dot indicator for notifications
+  return '•';
 }
 
 function CartCount() {
@@ -302,7 +275,6 @@ function CartCount() {
 
 export function HeadBar() {
   const { isAuthenticated, currentUser, logout, authAxios } = useAuth();
-  const { hasUnreadMessages } = useMessages();
   const [profileData, setProfileData] = useState({ fullName: '', profileImage: '' });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -315,16 +287,27 @@ export function HeadBar() {
   useEffect(() => {
     if (isAuthenticated && currentUser) {
       const fetchProfileData = async () => {
-        if (!isAuthenticated) return;
+        if (!isAuthenticated || !currentUser || !currentUser.userId) {
+          console.log("Skipping profile fetch: Not authenticated or incomplete user data");
+          return;
+        }
         
         try {
+          console.log("Fetching profile data for user:", currentUser.userId);
           const response = await authAxios.get('/users/profile');
           
           if (response.data) {
+            console.log("Profile data received:", response.data);
             setProfileData(response.data);
           }
         } catch (error) {
           console.error('Error fetching profile data:', error);
+          console.error('Error details:', error.response?.data || error.message);
+          // Initialize with default values if we can't fetch profile
+          setProfileData({ 
+            fullName: currentUser.email || 'User',
+            profileImage: '' 
+          });
         }
       };
       
@@ -367,9 +350,9 @@ export function HeadBar() {
               </span>
             </span>
             <Link to="/cart" className="nav-link">Cart <span className="cart-badge"><CartCount /></span></Link>
-            <Link to="/chats" className="nav-link">DMs <span className="message-badge"><MessageCount /></span></Link>
+            <Link to="/chats" className="nav-link">DMs <span className="message-badge">•</span></Link>
             {windowWidth > 1160 && (
-              <button className="sign-in-btn" onClick={logout}>logout</button>
+            <button className="sign-in-btn" onClick={logout}>logout</button>
             )}
             
             {/* Mobile menu toggle button */}
@@ -383,7 +366,7 @@ export function HeadBar() {
           <>
             <Link to="/cart" className="nav-link">Cart</Link>
             {windowWidth > 1160 && (
-              <Link to="/login" className="login-btn">login</Link>
+            <Link to="/login" className="login-btn">login</Link>
             )}
             
             {/* Mobile menu toggle button */}
@@ -870,7 +853,6 @@ function ProductDetailPage() {
   const navigate = useNavigate();
   const { authAxios, currentUser, isAuthenticated } = useAuth();
   const { updateCartCount } = useCart();
-  const { updateUnreadCount } = useMessages();
   const { protectedAction, renderToast } = useProtectedInteraction();
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -933,11 +915,6 @@ function ProductDetailPage() {
       // Update cart count
       if (updateCartCount) {
         updateCartCount();
-      }
-      
-      // Update unread message count
-      if (updateUnreadCount) {
-        updateUnreadCount();
       }
       
       // Show success toast
@@ -1015,11 +992,17 @@ function ProductDetailPage() {
     </div>
   );
 
-  const isOwner = isAuthenticated && currentUser.userId === product.seller_id;
+  // Check if current user is the owner of this product
+  const isOwner = isAuthenticated && currentUser && currentUser.userId === product.seller_id;
 
   return (
     <div className="product-detail-page">
       <div className="product-detail-container">
+        {isOwner && (
+          <div className="owner-badge">
+            <span>Your Listing</span>
+          </div>
+        )}
         <div className="product-detail-left">
           <img 
             src={product.image_path || "/api/placeholder/600/400"} 
@@ -1048,7 +1031,13 @@ function ProductDetailPage() {
           
           {isOwner ? (
             <div className="owner-message">
-              <p>This is your listing</p>
+              <p>This is your listing. You can manage it from the "My Products" page.</p>
+              <button 
+                onClick={() => navigate('/my-products')} 
+                className="manage-listing-button"
+              >
+                Manage Your Listing
+              </button>
             </div>
           ) : (
             <div className="product-actions">
@@ -1184,18 +1173,18 @@ function CreateProductPage() {
       }
 
       // Removed image dimension check to allow phone photos
-      
+
       // If checks pass, proceed with the upload
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const base64Image = event.target.result;
-        setPreviewImage(base64Image);
-        setFormData({
-          ...formData,
-          image_path: base64Image
-        });
-        setImageError('');
-      };
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const base64Image = event.target.result;
+          setPreviewImage(base64Image);
+          setFormData({
+            ...formData,
+            image_path: base64Image
+          });
+          setImageError('');
+        };
       reader.onerror = () => { // Add error handling for reader
         setImageError('Failed to read image file. Please try again.');
       };
@@ -1532,7 +1521,6 @@ function ChatsListPage() {
 function ChatPage() {
   const { id } = useParams();
   const { authAxios, currentUser, isAuthenticated } = useAuth();
-  const { markAllAsRead } = useMessages();
   const navigate = useNavigate();
   const [chat, setChat] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -1550,14 +1538,6 @@ function ChatPage() {
   useEffect(() => {
     console.log("Current user:", currentUser);
   }, [currentUser]);
-
-  // Add a separate effect just for marking messages as read
-  useEffect(() => {
-    if (isAuthenticated && id) {
-      // Mark messages as read when the chat is opened
-      markAllAsRead(id);
-    }
-  }, [isAuthenticated, id, markAllAsRead]);
 
   // Initialize socket connection and fetch chat data
   useEffect(() => {
@@ -1631,19 +1611,19 @@ function ChatPage() {
       console.log('Received new message via socket from other user:', message);
 
       // Add message from other user to state
-      setMessages(prevMessages => {
+        setMessages(prevMessages => {
         // Avoid duplicate messages by ID
-        if (prevMessages.some(m => m.id === message.id)) {
+          if (prevMessages.some(m => m.id === message.id)) {
           console.log('Duplicate message ignored:', message.id);
           return prevMessages; // Don't add if ID already exists
-        }
-        // Use a safe immutable update
+          }
+          // Use a safe immutable update
         // Add the new message from the other user
         console.log('Adding new message from other user to state:', message.id);
-        return [...prevMessages, message];
-      });
+          return [...prevMessages, message];
+        });
     };
-
+    
     socket.on('new_message', handleNewMessage);
 
     // Cleanup on unmount or when dependencies change
@@ -1670,24 +1650,24 @@ function ChatPage() {
         ]);
 
         if (isMounted) {
-          setChat(chatResponse.data);
+        setChat(chatResponse.data);
           setMessages(messagesResponse.data);
-          console.log('Chat data received:', chatResponse.data);
-          console.log('Messages received:', messagesResponse.data.length);
-
-          // Initial scroll to bottom after loading messages
-          setTimeout(() => {
-            if (messagesEndRef.current) {
-              messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
-            }
-          }, 100);
+        console.log('Chat data received:', chatResponse.data);
+        console.log('Messages received:', messagesResponse.data.length);
+        
+        // Initial scroll to bottom after loading messages
+        setTimeout(() => {
+          if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
+          }
+        }, 100);
         }
       } catch (err) {
         console.error('Error fetching chat data:', err.response?.data || err.message);
         if (isMounted) {
-          setToastMessage(err.response?.data?.error || 'Failed to load chat');
-          setToastType('error');
-          setShowToast(true);
+        setToastMessage(err.response?.data?.error || 'Failed to load chat');
+        setToastType('error');
+        setShowToast(true);
           // Consider navigating away only if the error is critical (e.g., 404 Not Found, 403 Forbidden)
           if (err.response?.status === 404 || err.response?.status === 403) {
               setTimeout(() => navigate('/chats'), 2000);
@@ -1702,7 +1682,7 @@ function ChatPage() {
       }
     };
 
-    fetchChatAndMessages();
+      fetchChatAndMessages();
 
     // Cleanup function to set isMounted false when component unmounts
     return () => {
@@ -1712,7 +1692,7 @@ function ChatPage() {
 
   // Scroll to bottom when messages change
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' }); // Use auto for instant scroll
   }, [messages]);
 
   const handleSendMessage = async (e) => {
@@ -1859,10 +1839,10 @@ function ChatPage() {
   if (loading || !chat) {
     console.log(`ChatPage: Loading chat data (loading: ${loading}, chat: ${!!chat})`);
     return (
-      <div className="chat-page">
+    <div className="chat-page">
         <div className="loading">Loading chat data...</div>
-      </div>
-    );
+    </div>
+  );
   }
 
   // 3. *After* chat data is loaded, explicitly check for currentUser.id
@@ -1885,7 +1865,6 @@ function ChatPage() {
           <Link to="/chats" className="back-button">← Back to Messages</Link>
           <div className="chat-header-info">
             <h2>{chat?.product_name || "Unknown Product"}</h2>
-            <p className="chat-header-price">${parseFloat(chat?.product_price || 0).toLocaleString()}</p>
             <p className="chat-header-users">
               {currentUser.userId === chat?.seller_id 
                 ? `Chatting with buyer: ${chat?.buyer_email}` 
@@ -1975,10 +1954,8 @@ function App() {
     <Router>
       <AuthProvider>
         <CartProvider>
-          <MessagesProvider>
             <PageTitle />
         <AppContent />
-          </MessagesProvider>
         </CartProvider>
       </AuthProvider>
     </Router>
@@ -1987,36 +1964,58 @@ function App() {
 
 function AppContent() {
   const { isAuthenticated, currentUser } = useAuth();
-  const { setHasUnreadMessages } = useMessages();
   const [toast, setToast] = useState(null);
   const [globalSocket, setGlobalSocket] = useState(null);
   
   // Set up global socket connection for unread messages
   useEffect(() => {
-    if (!isAuthenticated || !currentUser) return;
+    if (!isAuthenticated || !currentUser) {
+      console.log('Skipping socket connection: not authenticated or no user data');
+      return;
+    }
     
-    console.log('Setting up global socket connection for unread messages');
+    if (!currentUser.userId) {
+      console.log('Skipping socket connection: missing userId in currentUser');
+      return;
+    }
+    
+    console.log('Setting up global socket connection for general notifications for user:', currentUser.userId);
     const token = localStorage.getItem('token');
+    if (!token) {
+      console.log('Skipping socket connection: no token available');
+      return;
+    }
+    
     const newSocket = io(SOCKET_URL, {
       auth: { token }
     });
     
     newSocket.on('connect', () => {
-      console.log('Socket connected for unread message notifications');
+      console.log('Global socket connected successfully for user:', currentUser.userId);
     });
     
-    // Listen for unread messages
-    newSocket.on('unread_message', (message) => {
-      console.log('Received unread message notification');
-      setHasUnreadMessages(true);
+    newSocket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
     });
+    
+    // REMOVED: Listener for 'unread_message' as the feature is removed
+    // newSocket.on('unread_message', (message) => {
+    //   console.log('Received unread message notification');
+    //   // setHasUnreadMessages(true); // This was causing the error
+    // });
+    //
+    // You can add other global socket listeners here if needed in the future
+    // e.g., newSocket.on('global_notification', (data) => { ... });
     
     setGlobalSocket(newSocket);
     
     return () => {
-      if (newSocket) newSocket.disconnect();
+      if (newSocket) {
+        console.log('Disconnecting socket for user:', currentUser.userId);
+        newSocket.disconnect();
+      }
     };
-  }, [isAuthenticated, currentUser, setHasUnreadMessages]);
+  }, [isAuthenticated, currentUser]); // Removed setHasUnreadMessages from dependency array
   
   return (
     <>
@@ -2138,7 +2137,6 @@ function SiteFooter() {
 function CartPage() {
   const { authAxios, isAuthenticated, currentUser } = useAuth();
   const { updateCartCount } = useCart();
-  const { updateUnreadCount } = useMessages();
   const { protectedAction, renderToast } = useProtectedInteraction();
   const navigate = useNavigate();
   const [cartItems, setCartItems] = useState([]);
@@ -2232,11 +2230,6 @@ function CartPage() {
         if (updateCartCount) {
           updateCartCount();
         }
-      }
-      
-      // Update unread message count
-      if (updateUnreadCount) {
-        updateUnreadCount();
       }
       
       // Show success toast
@@ -2431,25 +2424,53 @@ function ProductManagementPage() {
   const fetchUserProducts = async () => {
     // Only attempt to fetch if the user is authenticated and authAxios is available
     if (!isAuthenticated || !authAxios || !currentUser) {
+      console.log("Cannot fetch products: User not authenticated or currentUser not available");
       setLoading(false);
+      setProducts([]);
+      return;
+    }
+    
+    if (!currentUser.userId) {
+      console.log("Cannot fetch products: User ID is undefined");
+      setLoading(false);
+      setProducts([]);
       return;
     }
     
     try {
       setLoading(true);
+      console.log("Fetching products for user ID:", currentUser.userId);
       // Use the existing products endpoint with the seller_id filter
       const response = await authAxios.get(`/products?seller_id=${currentUser.userId}`);
-      console.log("Fetched user products:", response.data);
+      console.log("Fetched user products response:", response);
+      console.log("Fetched user products data:", response.data);
       
-      // Ensure we have an array of products
+      // Ensure we have an array of products and debug product IDs
       if (Array.isArray(response.data)) {
+        // Check ID fields in the data
+        response.data.forEach((product, index) => {
+          console.log(`Product ${index} ID fields:`, {
+            id: product.id,
+            _id: product._id,
+            productId: product.productId
+          });
+          
+          // Ensure all products have a standard 'id' field
+          if (!product.id && product._id) {
+            console.log(`Converting _id to id for product index ${index}`);
+            product.id = product._id;
+          }
+        });
+        
         setProducts(response.data);
+        console.log("Products state updated with:", response.data.length, "products");
       } else {
         console.error("Expected array of products, got:", response.data);
         setProducts([]);
       }
     } catch (error) {
       console.error("Error fetching user's products:", error);
+      console.error("Error details:", error.response?.data || error.message);
       setToastMessage("Error loading your products. Please try again.");
       setToastType('error');
       setShowToast(true);
@@ -2728,9 +2749,20 @@ function ProductManagementPage() {
   };
 
   const handleDeleteProduct = async (productId) => {
+    if (!productId) {
+      console.error("Cannot delete product: productId is undefined");
+      setToastMessage("Error: Product ID is missing");
+      setToastType('error');
+      setShowToast(true);
+      return;
+    }
+    
     if (window.confirm("Are you sure you want to delete this product? This action cannot be undone.")) {
       try {
-        await authAxios.delete(`/products/${productId}`);
+        console.log("Attempting to delete product with ID:", productId);
+        const response = await authAxios.delete(`/products/${productId}`);
+        console.log("Delete product response:", response);
+        
         setToastMessage("Product deleted successfully!");
         setToastType('success');
         setShowToast(true);
@@ -2739,7 +2771,17 @@ function ProductManagementPage() {
         await fetchUserProducts();
       } catch (error) {
         console.error("Error deleting product:", error);
-        setToastMessage("Failed to delete product. Please try again.");
+        console.error("Error details:", error.response?.data || error.message);
+        
+        // Handle specific error cases
+        if (error.response && error.response.status === 403) {
+          setToastMessage("You don't have permission to delete this product.");
+        } else if (error.response && error.response.status === 404) {
+          setToastMessage("Product not found. It may have been already deleted.");
+        } else {
+          setToastMessage(error.response?.data?.error || "Failed to delete product. Please try again.");
+        }
+        
         setToastType('error');
         setShowToast(true);
       }
@@ -2986,7 +3028,21 @@ function ProductManagementPage() {
                     </button>
                     <button 
                       className="delete-product-button"
-                      onClick={() => handleDeleteProduct(product.id)}
+                      onClick={() => {
+                        // Debug product ID fields
+                        console.log("Delete clicked for product:", product);
+                        console.log("Product ID fields:", {
+                          id: product.id,
+                          _id: product._id,
+                          productId: product.productId
+                        });
+                        
+                        // Use id, _id, or productId (in that order of preference)
+                        const idToUse = product.id || product._id || product.productId;
+                        console.log("Using ID for deletion:", idToUse);
+                        
+                        handleDeleteProduct(idToUse);
+                      }}
                     >
                       Delete
                     </button>
@@ -3020,16 +3076,27 @@ function MobileSidebar({ isOpen, onClose, isAuthenticated, isVerified, onLogout 
   useEffect(() => {
     if (isOpen && isAuthenticated && currentUser) {
       const fetchProfileData = async () => {
-        if (!isAuthenticated) return;
+        if (!isAuthenticated || !currentUser || !currentUser.userId) {
+          console.log("Skipping profile fetch in sidebar: Not authenticated or incomplete user data");
+          return;
+        }
         
         try {
+          console.log("Fetching profile data in sidebar for user:", currentUser.userId);
           const response = await authAxios.get('/users/profile');
           
           if (response.data) {
+            console.log("Sidebar profile data received:", response.data);
             setProfileData(response.data);
           }
         } catch (error) {
-          console.error('Error fetching profile data:', error);
+          console.error('Error fetching profile data in sidebar:', error);
+          console.error('Error details:', error.response?.data || error.message);
+          // Initialize with email if we can't fetch profile
+              setProfileData({
+            fullName: currentUser.email || 'User',
+            profileImage: ''
+              });
         }
       };
       

@@ -371,28 +371,48 @@ app.put('/api/products/:id', authenticateToken, async (req, res) => {
 app.delete('/api/products/:id', authenticateToken, async (req, res) => {
   try {
     const productId = req.params.id;
-    
+    const userId = req.user.userId; // Get user ID from token
+
     // First check if product exists and user is the seller
     const productCheck = await pool.query(
       'SELECT seller_id FROM products WHERE id = $1',
       [productId]
     );
-    
+
     if (productCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Product not found' });
     }
-    
+
     // Verify user is the seller of the product
-    if (productCheck.rows[0].seller_id !== req.user.userId) {
+    if (productCheck.rows[0].seller_id !== userId) {
       return res.status(403).json({ error: 'Unauthorized: You can only delete your own products' });
     }
-    
-    // Delete the product
+
+    // Delete related items first to avoid foreign key constraint errors
+    console.log(`Deleting related items for product ID: ${productId}`);
+
+    // 1. Delete cart items referencing this product
+    await pool.query('DELETE FROM cart_items WHERE product_id = $1', [productId]);
+    console.log(`Deleted cart_items for product ${productId}`);
+
+    // 2. Delete messages associated with chats for this product
+    await pool.query(
+      'DELETE FROM messages WHERE chat_id IN (SELECT id FROM chats WHERE product_id = $1)',
+      [productId]
+    );
+    console.log(`Deleted messages for product ${productId}`);
+
+    // 3. Delete chats associated with this product
+    await pool.query('DELETE FROM chats WHERE product_id = $1', [productId]);
+    console.log(`Deleted chats for product ${productId}`);
+
+    // 4. Delete the product itself
     await pool.query('DELETE FROM products WHERE id = $1', [productId]);
-    
-    res.json({ success: true, message: 'Product deleted successfully' });
+    console.log(`Deleted product ${productId}`);
+
+    res.json({ success: true, message: 'Product and related items deleted successfully' });
   } catch (error) {
-    console.error('Error deleting product:', error);
+    console.error('Error deleting product and related items:', error);
     res.status(500).json({ error: 'Failed to delete product' });
   }
 });
@@ -526,12 +546,6 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
       `SELECT c.*, 
         p.name as product_name, p.price as product_price, p.image_path as product_image,
         u1.email as buyer_email, u2.email as seller_email,
-        (SELECT EXISTS(
-          SELECT 1 FROM messages m 
-          WHERE m.chat_id = c.id 
-            AND m.sender_id != $1 
-            AND m.is_read = false
-        )) as has_unread,
         (SELECT MAX(created_at) FROM messages WHERE chat_id = c.id) as last_message_at,
         (SELECT message FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message,
         (SELECT sender_id FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_sender_id
@@ -620,78 +634,6 @@ app.get('/api/chats/:id/messages', authenticateToken, async (req, res) => {
   }
 });
 
-// Check if user has unread messages
-app.get('/api/chats/has-unread', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    
-    // First verify the user exists
-    const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
-    if (userCheck.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid user' });
-    }
-    
-    const result = await pool.query(
-      `SELECT EXISTS (
-        SELECT 1 FROM messages 
-        WHERE chat_id IN (
-          SELECT id FROM chats 
-          WHERE buyer_id = $1 OR seller_id = $1
-        )
-        AND sender_id != $1
-        AND is_read = false
-      ) as has_unread`,
-      [userId]
-    );
-    
-    res.json({ hasUnread: result.rows[0].has_unread });
-  } catch (error) {
-    console.error('Error checking unread messages:', error);
-    res.status(500).json({ 
-      error: 'Failed to check unread messages',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-// Mark all messages in a chat as read
-app.post('/api/chats/:id/mark-read', authenticateToken, async (req, res) => {
-  try {
-    const chatId = req.params.id;
-    const userId = req.user.userId;
-    
-    // Verify user has access to chat
-    const chatResult = await pool.query(
-      'SELECT * FROM chats WHERE id = $1',
-      [chatId]
-    );
-    
-    if (chatResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Chat not found' });
-    }
-    
-    const chat = chatResult.rows[0];
-    
-    // Ensure user is authorized to access this chat
-    if (chat.buyer_id !== userId && chat.seller_id !== userId) {
-      return res.status(403).json({ error: 'Unauthorized access to chat' });
-    }
-    
-    // Mark messages from other users as read
-    await pool.query(
-      `UPDATE messages 
-      SET is_read = true 
-      WHERE chat_id = $1 AND sender_id != $2 AND is_read = false`,
-      [chatId, userId]
-    );
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error marking messages as read:', error);
-    res.status(500).json({ error: 'Failed to mark messages as read' });
-  }
-});
-
 // We're removing the unread-count endpoint and implementing it client-side
 
 app.post('/api/chats/:id/messages', authenticateToken, async (req, res) => {
@@ -717,12 +659,12 @@ app.post('/api/chats/:id/messages', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized to send message' });
     }
     
-    // Create new message with is_read = false
+    // Create new message 
     const newMessageResult = await pool.query(
-      `INSERT INTO messages (chat_id, sender_id, message, is_read) 
-      VALUES ($1, $2, $3, $4) 
+      `INSERT INTO messages (chat_id, sender_id, message) 
+      VALUES ($1, $2, $3) 
       RETURNING *`,
-      [chat_id, sender_id, message, false]
+      [chat_id, sender_id, message]
     );
     
     // Get the sender email
@@ -738,10 +680,6 @@ app.post('/api/chats/:id/messages', authenticateToken, async (req, res) => {
     
     // Emit new message event to socket
     io.to(chat_id).emit('new_message', newMessage);
-    
-    // Also emit to the recipient's personal room for unread count
-    const recipientId = chat.buyer_id === sender_id ? chat.seller_id : chat.buyer_id;
-    io.to(recipientId).emit('unread_message', newMessage);
     
     res.status(201).json(newMessage);
   } catch (error) {
@@ -1271,10 +1209,6 @@ io.on('connection', (socket) => {
       // Broadcast the message to all clients in the room
       console.log(`Broadcasting message to room: ${chat_id}`);
       io.to(chat_id).emit('new_message', formattedMessage);
-      
-      // Also emit to the recipient's personal room for unread count
-      const recipientId = chat.buyer_id === socket.user.userId ? chat.seller_id : chat.buyer_id;
-      socket.to(recipientId).emit('unread_message', formattedMessage);
     } catch (error) {
       console.error('Error processing message:', error);
       socket.emit('error', 'Server error processing message');
