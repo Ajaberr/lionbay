@@ -2,12 +2,14 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth, useMessages } from '../App';
 import { io } from 'socket.io-client';
 import '../styles/HelpChatWidget.css';
+import { SOCKET_URL } from '../config';
 
-const SOCKET_URL = 'https://lionbay-api.onrender.com';
+// Remove hardcoded SOCKET_URL since we're importing it from config
+// const SOCKET_URL = 'https://lionbay-api.onrender.com';
 
 const HelpChatWidget = () => {
   const { currentUser, authAxios } = useAuth();
-  const { incrementUnreadCount } = useMessages();
+  const { setHasUnreadMessages } = useMessages();
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState([]);
@@ -22,12 +24,18 @@ const HelpChatWidget = () => {
     if (!currentUser) return;
 
     const token = localStorage.getItem('token');
+    console.log('Connecting to socket server at:', SOCKET_URL);
     const newSocket = io(SOCKET_URL, {
-      auth: { token }
+      auth: { token },
+      transports: ['websocket', 'polling'] // Try websocket first, then fallback to polling
     });
 
     newSocket.on('connect', () => {
       console.log('Connected to help chat socket');
+    });
+
+    newSocket.on('connect_error', (err) => {
+      console.error('Socket connection error:', err.message);
     });
 
     newSocket.on('admin_response', (response) => {
@@ -35,7 +43,7 @@ const HelpChatWidget = () => {
       const isNewMessage = !localStorage.getItem(`msg_seen_${response.id}`);
       
       if (!isOpen && isNewMessage) {
-        incrementUnreadCount();
+        setHasUnreadMessages(true);
       }
       
       setMessages(prev => {
@@ -71,7 +79,7 @@ const HelpChatWidget = () => {
     return () => {
       if (newSocket) newSocket.disconnect();
     };
-  }, [currentUser, isOpen, incrementUnreadCount]);
+  }, [currentUser, isOpen, setHasUnreadMessages]);
 
   // Toggle chat open/closed 
   const toggleChat = () => {
@@ -118,7 +126,7 @@ const HelpChatWidget = () => {
       
       if (isOpen) {
         // Reset unread counter when opening
-        incrementUnreadCount();
+        setHasUnreadMessages(false);
         
         // Mark all messages as seen
         const savedMessages = JSON.parse(localStorage.getItem('helpChatMessages') || '[]');
@@ -129,7 +137,7 @@ const HelpChatWidget = () => {
         });
       }
     }
-  }, [isOpen, currentUser, incrementUnreadCount]);
+  }, [isOpen, currentUser, setHasUnreadMessages]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
