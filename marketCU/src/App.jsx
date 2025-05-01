@@ -1595,14 +1595,14 @@ function ChatPage() {
 
   // Listen for new messages and other events
   useEffect(() => {
-    if (!socket || !currentUser?.id) return; // Ensure socket and user ID are ready
+    if (!socket || !currentUser?.userId) return; // Ensure socket and user ID are ready
 
-    console.log(`Setting up message listener for chat ${id} and user ${currentUser.id}`);
+    console.log(`Setting up message listener for chat ${id} and user ${currentUser.userId}`);
 
     // Listen for new messages from other users
     const handleNewMessage = (message) => {
       // 1. Ignore messages sent by the current user coming back via socket
-      if (currentUser?.id && message.sender_id === currentUser.id) {
+      if (currentUser?.userId && message.sender_id === currentUser.userId) {
         console.log('Ignoring self-sent message received via socket:', message.id);
         return; // Don't add our own messages coming back from the socket
       }
@@ -1611,19 +1611,19 @@ function ChatPage() {
       console.log('Received new message via socket from other user:', message);
 
       // Add message from other user to state
-        setMessages(prevMessages => {
+      setMessages(prevMessages => {
         // Avoid duplicate messages by ID
-          if (prevMessages.some(m => m.id === message.id)) {
+        if (prevMessages.some(m => m.id === message.id)) {
           console.log('Duplicate message ignored:', message.id);
           return prevMessages; // Don't add if ID already exists
-          }
-          // Use a safe immutable update
+        }
+        // Use a safe immutable update
         // Add the new message from the other user
         console.log('Adding new message from other user to state:', message.id);
-          return [...prevMessages, message];
-        });
+        return [...prevMessages, message];
+      });
     };
-    
+
     socket.on('new_message', handleNewMessage);
 
     // Cleanup on unmount or when dependencies change
@@ -1631,7 +1631,7 @@ function ChatPage() {
       console.log(`Removing socket listener for chat ${id}`);
       socket.off('new_message', handleNewMessage);
     };
-  }, [socket, currentUser?.id, id]); // Dependencies: socket, user ID, chat ID
+  }, [socket, currentUser?.userId, id]); // Dependencies: socket, user ID, chat ID
 
   // Fetch chat and message data
   useEffect(() => {
@@ -1650,24 +1650,24 @@ function ChatPage() {
         ]);
 
         if (isMounted) {
-        setChat(chatResponse.data);
+          setChat(chatResponse.data);
           setMessages(messagesResponse.data);
-        console.log('Chat data received:', chatResponse.data);
-        console.log('Messages received:', messagesResponse.data.length);
-        
-        // Initial scroll to bottom after loading messages
-        setTimeout(() => {
-          if (messagesEndRef.current) {
-            messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
-          }
-        }, 100);
+          console.log('Chat data received:', chatResponse.data);
+          console.log('Messages received:', messagesResponse.data.length);
+
+          // Initial scroll to bottom after loading messages
+          setTimeout(() => {
+            if (messagesEndRef.current) {
+              messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
+            }
+          }, 100);
         }
       } catch (err) {
         console.error('Error fetching chat data:', err.response?.data || err.message);
         if (isMounted) {
-        setToastMessage(err.response?.data?.error || 'Failed to load chat');
-        setToastType('error');
-        setShowToast(true);
+          setToastMessage(err.response?.data?.error || 'Failed to load chat');
+          setToastType('error');
+          setShowToast(true);
           // Consider navigating away only if the error is critical (e.g., 404 Not Found, 403 Forbidden)
           if (err.response?.status === 404 || err.response?.status === 403) {
               setTimeout(() => navigate('/chats'), 2000);
@@ -1682,7 +1682,7 @@ function ChatPage() {
       }
     };
 
-      fetchChatAndMessages();
+    fetchChatAndMessages();
 
     // Cleanup function to set isMounted false when component unmounts
     return () => {
@@ -1698,8 +1698,8 @@ function ChatPage() {
   const handleSendMessage = async (e) => {
     e.preventDefault();
     
-    // Safety check: Ensure currentUser.id is available
-    if (!currentUser?.id) {
+    // Safety check: Ensure currentUser.userId is available
+    if (!currentUser?.userId) {
       console.error("Cannot send message: currentUser ID is not available.");
       setToastMessage("Error: User information not fully loaded. Please try again shortly.");
       setToastType("error");
@@ -1721,7 +1721,7 @@ function ChatPage() {
     const optimisticMessage = {
       id: tempId,
       chat_id: id,
-      sender_id: currentUser.id, // Use currentUser.id here
+      sender_id: currentUser.userId, // Use currentUser.userId here
       message: messageText,
       created_at: new Date().toISOString(),
       sender_email: currentUser.email,
@@ -1803,18 +1803,18 @@ function ChatPage() {
 
   // Check if a message was sent by the current user
   const isMessageFromCurrentUser = (message) => {
-    if (!currentUser?.id) {
+    if (!currentUser?.userId) {
       console.warn(`[isMessageFromCurrentUser] Warning: currentUser.id still unavailable for Msg ID: ${message?.id}`);
       return false;
     }
-    const isMatch = message?.sender_id === currentUser.id;
-    console.log(`[isMessageFromCurrentUser] Msg ID: ${message?.id} - Comparing sender ${message?.sender_id} vs current ${currentUser.id} -> Match: ${isMatch}`);
+    const isMatch = message?.sender_id === currentUser.userId;
+    console.log(`[isMessageFromCurrentUser] Msg ID: ${message?.id} - Comparing sender ${message?.sender_id} vs current ${currentUser.userId} -> Match: ${isMatch}`);
     return isMatch;
   };
 
   // Add this function to determine message styling
   const getMessageClassName = (message) => {
-    if (!currentUser?.id) {
+    if (!currentUser?.userId) {
        console.error(`[getMessageClassName] Error: currentUser.id unavailable when getting class for Msg ID: ${message?.id}`);
        return "message error"; // Return an error state class
     }
@@ -1839,14 +1839,14 @@ function ChatPage() {
   if (loading || !chat) {
     console.log(`ChatPage: Loading chat data (loading: ${loading}, chat: ${!!chat})`);
     return (
-    <div className="chat-page">
+      <div className="chat-page">
         <div className="loading">Loading chat data...</div>
-    </div>
-  );
+      </div>
+    );
   }
 
-  // 3. *After* chat data is loaded, explicitly check for currentUser.id
-  if (!currentUser?.id) {
+  // 3. *After* chat data is loaded, explicitly check for currentUser.userId
+  if (!currentUser?.userId) {
     console.warn("ChatPage: Chat data loaded, but currentUser.id is still missing. Waiting for user context...");
     return (
       <div className="chat-page">
@@ -1856,7 +1856,7 @@ function ChatPage() {
   }
 
   // --- If all checks pass, render the chat ---
-  console.log(`>>> ChatPage Render: All checks passed. User ID: ${currentUser.id}`);
+  console.log(`>>> ChatPage Render: All checks passed. User ID: ${currentUser.userId}`);
 
   return (
     <div className="chat-page">
