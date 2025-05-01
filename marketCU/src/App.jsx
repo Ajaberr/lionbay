@@ -1643,70 +1643,100 @@ function ChatPage() {
 
   // Listen for new messages and other events
   useEffect(() => {
-    if (!socket) return;
+    if (!socket || !currentUser?.id) return; // Ensure socket and user ID are ready
 
-    console.log('Setting up message listeners');
+    console.log(`Setting up message listener for chat ${id} and user ${currentUser.id}`);
 
     // Listen for new messages from other users
-    socket.on('new_message', (message) => {
-      console.log('Received new message via socket:', message);
-      
-      // Only add messages from others, not from ourselves (to prevent duplicates)
-      if (message.sender_id !== currentUser.userId) {
-        setMessages(prevMessages => {
-          // Avoid duplicate messages
-          if (prevMessages.some(m => m.id === message.id)) {
-            return prevMessages;
-          }
-          // Use a safe immutable update
-          return [...prevMessages, message];
-        });
+    const handleNewMessage = (message) => {
+      // 1. Ignore messages sent by the current user coming back via socket
+      if (currentUser?.id && message.sender_id === currentUser.id) {
+        console.log('Ignoring self-sent message received via socket:', message.id);
+        return; // Don't add our own messages coming back from the socket
       }
-    });
-    
-    // Cleanup on unmount
-    return () => {
-      console.log('Removing socket listeners');
-      socket.off('new_message');
+      
+      // 2. Handle messages from other users
+      console.log('Received new message via socket from other user:', message);
+
+      // Add message from other user to state
+      setMessages(prevMessages => {
+        // Avoid duplicate messages by ID
+        if (prevMessages.some(m => m.id === message.id)) {
+          console.log('Duplicate message ignored:', message.id);
+          return prevMessages; // Don't add if ID already exists
+        }
+        // Use a safe immutable update
+        // Add the new message from the other user
+        console.log('Adding new message from other user to state:', message.id);
+        return [...prevMessages, message];
+      });
     };
-  }, [socket, currentUser]);
+
+    socket.on('new_message', handleNewMessage);
+
+    // Cleanup on unmount or when dependencies change
+    return () => {
+      console.log(`Removing socket listener for chat ${id}`);
+      socket.off('new_message', handleNewMessage);
+    };
+  }, [socket, currentUser?.id, id]); // Dependencies: socket, user ID, chat ID
 
   // Fetch chat and message data
   useEffect(() => {
+    let isMounted = true; // Flag to prevent state updates on unmounted component
+
     const fetchChatAndMessages = async () => {
+      // Ensure we don't proceed if the component isn't mounted or auth isn't ready
+      if (!isMounted || !isAuthenticated || !id || !authAxios) return;
+
+      console.log(`Fetching chat/message data for ID: ${id}`);
+      setLoading(true); // Set loading true when fetching starts
       try {
-        console.log(`Fetching chat data for ID: ${id}`);
-        const chatResponse = await authAxios.get(`/chats/${id}`);
-        setChat(chatResponse.data);
-        console.log('Chat data received:', chatResponse.data);
-        
-        const messagesResponse = await authAxios.get(`/chats/${id}/messages`);
-        console.log('Messages received:', messagesResponse.data.length);
-        setMessages(messagesResponse.data);
-        
-        // Initial scroll to bottom after loading messages
-        setTimeout(() => {
-          if (messagesEndRef.current) {
-            messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
-          }
-        }, 100);
+        const [chatResponse, messagesResponse] = await Promise.all([
+          authAxios.get(`/chats/${id}`),
+          authAxios.get(`/chats/${id}/messages`)
+        ]);
+
+        if (isMounted) {
+          setChat(chatResponse.data);
+          setMessages(messagesResponse.data);
+          console.log('Chat data received:', chatResponse.data);
+          console.log('Messages received:', messagesResponse.data.length);
+
+          // Initial scroll to bottom after loading messages
+          setTimeout(() => {
+            if (messagesEndRef.current) {
+              messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
+            }
+          }, 100);
+        }
       } catch (err) {
         console.error('Error fetching chat data:', err.response?.data || err.message);
-        setToastMessage(err.response?.data?.error || 'Failed to load chat');
-        setToastType('error');
-        setShowToast(true);
-        setTimeout(() => {
-        navigate('/chats');
-        }, 2000);
+        if (isMounted) {
+          setToastMessage(err.response?.data?.error || 'Failed to load chat');
+          setToastType('error');
+          setShowToast(true);
+          // Consider navigating away only if the error is critical (e.g., 404 Not Found, 403 Forbidden)
+          if (err.response?.status === 404 || err.response?.status === 403) {
+              setTimeout(() => navigate('/chats'), 2000);
+          } else {
+              // For other errors, maybe allow retry or show persistent error?
+          }
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false); // Set loading false when fetching finishes
+        }
       }
     };
 
-    if (isAuthenticated && id) {
-      fetchChatAndMessages();
-    }
-  }, [authAxios, id, isAuthenticated, navigate]);
+    fetchChatAndMessages();
+
+    // Cleanup function to set isMounted false when component unmounts
+    return () => {
+      isMounted = false;
+    };
+  }, [authAxios, id, isAuthenticated, navigate]); // Dependencies: only fetch when these change
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -1715,6 +1745,15 @@ function ChatPage() {
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
+    
+    // Safety check: Ensure currentUser.id is available
+    if (!currentUser?.id) {
+      console.error("Cannot send message: currentUser ID is not available.");
+      setToastMessage("Error: User information not fully loaded. Please try again shortly.");
+      setToastType("error");
+      setShowToast(true);
+      return;
+    }
     
     const messageText = newMessage.trim();
     if (!messageText || sending) return;
@@ -1730,7 +1769,7 @@ function ChatPage() {
     const optimisticMessage = {
       id: tempId,
       chat_id: id,
-      sender_id: currentUser.userId,
+      sender_id: currentUser.id, // Use currentUser.id here
       message: messageText,
       created_at: new Date().toISOString(),
       sender_email: currentUser.email,
@@ -1812,25 +1851,60 @@ function ChatPage() {
 
   // Check if a message was sent by the current user
   const isMessageFromCurrentUser = (message) => {
-    return message.sender_id === currentUser.userId;
+    if (!currentUser?.id) {
+      console.warn(`[isMessageFromCurrentUser] Warning: currentUser.id still unavailable for Msg ID: ${message?.id}`);
+      return false;
+    }
+    const isMatch = message?.sender_id === currentUser.id;
+    console.log(`[isMessageFromCurrentUser] Msg ID: ${message?.id} - Comparing sender ${message?.sender_id} vs current ${currentUser.id} -> Match: ${isMatch}`);
+    return isMatch;
   };
 
   // Add this function to determine message styling
   const getMessageClassName = (message) => {
-    const baseClass = isMessageFromCurrentUser(message) 
-      ? "message sent" 
-      : "message received";
+    if (!currentUser?.id) {
+       console.error(`[getMessageClassName] Error: currentUser.id unavailable when getting class for Msg ID: ${message?.id}`);
+       return "message error"; // Return an error state class
+    }
+    const isSent = isMessageFromCurrentUser(message);
+    const baseClass = isSent ? "message sent" : "message received";
     
-    return message.is_read === false && !isMessageFromCurrentUser(message)
-      ? `${baseClass} unread` 
-      : baseClass;
+    const isUnread = message?.is_read === false && !isSent;
+    // Log the unread status determination
+    console.log(`[getMessageClassName] Msg ID: ${message?.id} -> isSent: ${isSent}, isUnread: ${isUnread}, Final Class: "${baseClass}${isUnread ? ' unread' : ''}"`);
+    return `${baseClass}${isUnread ? ' unread' : ''}`;
   };
 
-  if (loading) return (
-    <div className="chat-page">
-      <div className="loading">Loading chat...</div>
-    </div>
-  );
+  // --- Multi-stage Loading Checks ---
+  // 1. Check authentication status from context
+  if (!isAuthenticated) {
+    console.log("ChatPage: Not authenticated, redirecting.");
+    // This should ideally be handled by a ProtectedRoute component wrapping this page
+    return <Navigate to="/login" replace />;
+  }
+
+  // 2. Check if chat/message data is still loading
+  if (loading || !chat) {
+    console.log(`ChatPage: Loading chat data (loading: ${loading}, chat: ${!!chat})`);
+    return (
+      <div className="chat-page">
+        <div className="loading">Loading chat data...</div>
+      </div>
+    );
+  }
+
+  // 3. *After* chat data is loaded, explicitly check for currentUser.id
+  if (!currentUser?.id) {
+    console.warn("ChatPage: Chat data loaded, but currentUser.id is still missing. Waiting for user context...");
+    return (
+      <div className="chat-page">
+        <div className="loading">Finalizing user information...</div>
+      </div>
+    );
+  }
+
+  // --- If all checks pass, render the chat ---
+  console.log(`>>> ChatPage Render: All checks passed. User ID: ${currentUser.id}`);
 
   return (
     <div className="chat-page">
@@ -1863,6 +1937,7 @@ function ChatPage() {
               {messages.map((message) => (
                 <div
                   key={message.id || `temp-${message.tempId}`}
+                  // Call directly, function will use context's currentUser.id
                   className={getMessageClassName(message)}
                 >
                   <div className="message-content">
