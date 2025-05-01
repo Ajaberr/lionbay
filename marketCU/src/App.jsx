@@ -1804,7 +1804,7 @@ function ChatPage() {
   // Check if a message was sent by the current user
   const isMessageFromCurrentUser = (message) => {
     if (!currentUser?.userId) {
-      console.warn(`[isMessageFromCurrentUser] Warning: currentUser.id still unavailable for Msg ID: ${message?.id}`);
+      console.warn(`[isMessageFromCurrentUser] Warning: currentUser.userId still unavailable for Msg ID: ${message?.id}`);
       return false;
     }
     const isMatch = message?.sender_id === currentUser.userId;
@@ -1815,7 +1815,7 @@ function ChatPage() {
   // Add this function to determine message styling
   const getMessageClassName = (message) => {
     if (!currentUser?.userId) {
-       console.error(`[getMessageClassName] Error: currentUser.id unavailable when getting class for Msg ID: ${message?.id}`);
+       console.error(`[getMessageClassName] Error: currentUser.userId unavailable when getting class for Msg ID: ${message?.id}`);
        return "message error"; // Return an error state class
     }
     const isSent = isMessageFromCurrentUser(message);
@@ -1847,7 +1847,7 @@ function ChatPage() {
 
   // 3. *After* chat data is loaded, explicitly check for currentUser.userId
   if (!currentUser?.userId) {
-    console.warn("ChatPage: Chat data loaded, but currentUser.id is still missing. Waiting for user context...");
+    console.warn("ChatPage: Chat data loaded, but currentUser.userId is still missing. Waiting for user context...");
     return (
       <div className="chat-page">
         <div className="loading">Finalizing user information...</div>
@@ -1865,6 +1865,7 @@ function ChatPage() {
           <Link to="/chats" className="back-button">← Back to Messages</Link>
           <div className="chat-header-info">
             <h2>{chat?.product_name || "Unknown Product"}</h2>
+            <p className="chat-header-price">${parseFloat(chat?.product_price || 0).toLocaleString()}</p>
             <p className="chat-header-users">
               {currentUser.userId === chat?.seller_id 
                 ? `Chatting with buyer: ${chat?.buyer_email}` 
@@ -1888,7 +1889,7 @@ function ChatPage() {
               {messages.map((message) => (
                 <div
                   key={message.id || `temp-${message.tempId}`}
-                  // Call directly, function will use context's currentUser.id
+                  // Call directly, function will use context's currentUser.userId
                   className={getMessageClassName(message)}
                 >
                   <div className="message-content">
@@ -2430,7 +2431,7 @@ function ProductManagementPage() {
       return;
     }
     
-    if (!currentUser.userId) {
+    if (!currentUser.userId) { // Fixed: Check for userId
       console.log("Cannot fetch products: User ID is undefined");
       setLoading(false);
       setProducts([]);
@@ -2439,9 +2440,9 @@ function ProductManagementPage() {
     
     try {
       setLoading(true);
-      console.log("Fetching products for user ID:", currentUser.userId);
+      console.log("Fetching products for user ID:", currentUser.userId); // Fixed: Log userId
       // Use the existing products endpoint with the seller_id filter
-      const response = await authAxios.get(`/products?seller_id=${currentUser.userId}`);
+      const response = await authAxios.get(`/products?seller_id=${currentUser.userId}`); // Fixed: Use userId
       console.log("Fetched user products response:", response);
       console.log("Fetched user products data:", response.data);
       
