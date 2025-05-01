@@ -569,7 +569,7 @@ app.get('/api/chats/:id', authenticateToken, async (req, res) => {
   try {
     const chatResult = await pool.query(
       `SELECT c.*, 
-        p.name as product_name, p.image_path as product_image,
+        p.name as product_name, p.image_path as product_image, p.price as product_price,
         u1.email as buyer_email, u2.email as seller_email
       FROM chats c
       JOIN products p ON c.product_id = p.id

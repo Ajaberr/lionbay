@@ -287,13 +287,13 @@ export function HeadBar() {
   useEffect(() => {
     if (isAuthenticated && currentUser) {
       const fetchProfileData = async () => {
-        if (!isAuthenticated || !currentUser || !currentUser.id) {
+        if (!isAuthenticated || !currentUser || !currentUser.userId) {
           console.log("Skipping profile fetch: Not authenticated or incomplete user data");
           return;
         }
         
         try {
-          console.log("Fetching profile data for user:", currentUser.id);
+          console.log("Fetching profile data for user:", currentUser.userId);
           const response = await authAxios.get('/users/profile');
           
           if (response.data) {
@@ -887,7 +887,7 @@ function ProductDetailPage() {
 
     try {
       // Check if user is trying to contact themselves
-      if (currentUser.id === product.seller_id) {
+      if (currentUser.userId === product.seller_id) {
         console.log("User tried to contact themselves");
         setToastMessage("Cannot contact yourself as the seller.");
         setToastType("error");
@@ -950,7 +950,7 @@ function ProductDetailPage() {
 
     try {
       // Check if user is trying to add their own product
-      if (currentUser.id === product.seller_id) {
+      if (currentUser.userId === product.seller_id) {
         setToastMessage("Cannot add your own product to cart.");
         setToastType("error");
         setShowToast(true);
@@ -993,7 +993,7 @@ function ProductDetailPage() {
   );
 
   // Check if current user is the owner of this product
-  const isOwner = isAuthenticated && currentUser && currentUser.id === product.seller_id;
+  const isOwner = isAuthenticated && currentUser && currentUser.userId === product.seller_id;
 
   return (
     <div className="product-detail-page">
@@ -1463,7 +1463,7 @@ function ChatsListPage() {
         <div className="chats-list">
           {chats.map(chat => {
             // Determine if the current user is the seller or buyer in this chat
-            const isSeller = currentUser.id === chat.seller_id;
+            const isSeller = currentUser.userId === chat.seller_id;
             
             return (
               <Link to={`/chats/${chat.id}`} key={chat.id} className={`chat-item ${isSeller ? 'seller-chat' : 'buyer-chat'}`}>
@@ -1489,7 +1489,7 @@ function ChatsListPage() {
                 {chat.last_message && (
                   <p className="chat-last-message">
                     <span className="message-sender">
-                      {chat.last_message_sender_id === currentUser.id 
+                      {chat.last_message_sender_id === currentUser.userId 
                         ? 'You: ' 
                         : chat.last_message_sender_id === chat.seller_id 
                           ? 'Seller: ' 
@@ -1866,14 +1866,14 @@ function ChatPage() {
           <div className="chat-header-info">
             <h2>{chat?.product_name || "Unknown Product"}</h2>
             <p className="chat-header-users">
-              {currentUser.id === chat?.seller_id 
+              {currentUser.userId === chat?.seller_id 
                 ? `Chatting with buyer: ${chat?.buyer_email}` 
                 : `Chatting with seller: ${chat?.seller_email}`}
             </p>
           </div>
           <div className="role-indicator">
-            <span className={`role-badge ${currentUser.id === chat?.seller_id ? 'seller' : 'buyer'}`}>
-              {currentUser.id === chat?.seller_id ? 'SELLING' : 'BUYING'}
+            <span className={`role-badge ${currentUser.userId === chat?.seller_id ? 'seller' : 'buyer'}`}>
+              {currentUser.userId === chat?.seller_id ? 'SELLING' : 'BUYING'}
                     </span>
           </div>
         </div>
@@ -1974,12 +1974,12 @@ function AppContent() {
       return;
     }
     
-    if (!currentUser.id) {
+    if (!currentUser.userId) {
       console.log('Skipping socket connection: missing userId in currentUser');
       return;
     }
     
-    console.log('Setting up global socket connection for general notifications for user:', currentUser.id);
+    console.log('Setting up global socket connection for general notifications for user:', currentUser.userId);
     const token = localStorage.getItem('token');
     if (!token) {
       console.log('Skipping socket connection: no token available');
@@ -1991,7 +1991,7 @@ function AppContent() {
     });
     
     newSocket.on('connect', () => {
-      console.log('Global socket connected successfully for user:', currentUser.id);
+      console.log('Global socket connected successfully for user:', currentUser.userId);
     });
     
     newSocket.on('connect_error', (error) => {
@@ -2011,7 +2011,7 @@ function AppContent() {
     
     return () => {
       if (newSocket) {
-        console.log('Disconnecting socket for user:', currentUser.id);
+        console.log('Disconnecting socket for user:', currentUser.userId);
         newSocket.disconnect();
       }
     };
@@ -2430,7 +2430,7 @@ function ProductManagementPage() {
       return;
     }
     
-    if (!currentUser.id) {
+    if (!currentUser.userId) {
       console.log("Cannot fetch products: User ID is undefined");
       setLoading(false);
       setProducts([]);
@@ -2439,9 +2439,9 @@ function ProductManagementPage() {
     
     try {
       setLoading(true);
-      console.log("Fetching products for user ID:", currentUser.id);
+      console.log("Fetching products for user ID:", currentUser.userId);
       // Use the existing products endpoint with the seller_id filter
-      const response = await authAxios.get(`/products?seller_id=${currentUser.id}`);
+      const response = await authAxios.get(`/products?seller_id=${currentUser.userId}`);
       console.log("Fetched user products response:", response);
       console.log("Fetched user products data:", response.data);
       
@@ -3076,13 +3076,13 @@ function MobileSidebar({ isOpen, onClose, isAuthenticated, isVerified, onLogout 
   useEffect(() => {
     if (isOpen && isAuthenticated && currentUser) {
       const fetchProfileData = async () => {
-        if (!isAuthenticated || !currentUser || !currentUser.id) {
+        if (!isAuthenticated || !currentUser || !currentUser.userId) {
           console.log("Skipping profile fetch in sidebar: Not authenticated or incomplete user data");
           return;
         }
         
         try {
-          console.log("Fetching profile data in sidebar for user:", currentUser.id);
+          console.log("Fetching profile data in sidebar for user:", currentUser.userId);
           const response = await authAxios.get('/users/profile');
           
           if (response.data) {
