@@ -116,12 +116,13 @@ export function AuthProvider({ children }) {
     ];
     
     // Make sure we store the isAdmin flag in the user data
+    const isAdmin = userData.isAdmin || adminEmails.includes(userData.email);
     const userWithAdminFlag = {
       ...userData,
-      isAdmin: userData.isAdmin || adminEmails.includes(userData.email)
+      isAdmin: isAdmin
     };
     
-    console.log('Login as admin?', userWithAdminFlag.isAdmin, 'Email:', userData.email);
+    console.log('Login as admin?', isAdmin, 'Email:', userData.email);
     
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(userWithAdminFlag));
@@ -500,10 +501,10 @@ function SignInPage() {
         const userData = {
           ...response.data.user,
           email,
-          isAdmin: isAdmin || response.data.user.isAdmin
+          isAdmin: isAdmin
         };
         
-        console.log('Verified login with admin status:', userData.isAdmin);
+        console.log('Verified login with admin status:', isAdmin, 'Email:', email);
         
         // Verify email login will handle admin flag and storage
         verifyEmailLogin(response.data.token, userData);
@@ -2009,9 +2010,11 @@ function AppContent() {
           </GrayscalePreview>
         } />
         <Route path="/admin" element={
-          <GrayscalePreview isAuthenticated={isAuthenticated && currentUser?.isAdmin}>
+          isAuthenticated && currentUser && currentUser.isAdmin ? (
             <AdminDashboard />
-          </GrayscalePreview>
+          ) : (
+            <Navigate to="/home" replace />
+          )
         } />
         <Route path="/discover" element={
           <GrayscalePreview isAuthenticated={isAuthenticated}>

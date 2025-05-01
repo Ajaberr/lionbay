@@ -1,7 +1,11 @@
 .admin-dashboard {
   display: flex;
+  flex-direction: column;
   min-height: calc(100vh - 60px);
   background-color: #f5f7fa;
+  padding: 20px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .admin-sidebar {
@@ -54,10 +58,50 @@
   border-left: 3px solid white;
 }
 
+.admin-info {
+  margin-bottom: 20px;
+  padding: 10px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.admin-tabs {
+  display: flex;
+  border-bottom: 1px solid #ddd;
+  margin-bottom: 20px;
+  overflow-x: auto; /* Allow horizontal scrolling on small screens */
+  white-space: nowrap;
+}
+
+.admin-tabs button {
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 500;
+  color: #777;
+  transition: all 0.2s;
+}
+
+.admin-tabs button:hover {
+  color: #1c4587;
+}
+
+.admin-tabs button.active {
+  color: #1c4587;
+  border-bottom-color: #1c4587;
+}
+
 .admin-content {
   flex: 1;
-  padding: 30px;
+  padding: 20px;
   overflow-y: auto;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .admin-loading {
@@ -69,16 +113,26 @@
   color: #777;
 }
 
+.admin-error-message {
+  padding: 15px;
+  margin-bottom: 20px;
+  background-color: #fde8e8;
+  color: #e53e3e;
+  border-radius: 6px;
+  border-left: 4px solid #e53e3e;
+}
+
 /* Dashboard Overview */
 .admin-overview h1 {
   margin-top: 0;
   margin-bottom: 30px;
   color: #333;
+  font-size: 24px;
 }
 
 .admin-stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 20px;
   margin-bottom: 30px;
 }
@@ -131,12 +185,14 @@
   background-color: white;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-  overflow: hidden;
+  overflow-x: auto; /* Enable horizontal scrolling */
+  width: 100%;
 }
 
 .admin-table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 600px; /* Ensure table doesn't get too squished */
 }
 
 .admin-table th,
@@ -166,7 +222,7 @@
   color: white;
   border: none;
   border-radius: 4px;
-  padding: 5px 10px;
+  padding: 8px 16px;
   font-size: 14px;
   cursor: pointer;
   transition: background-color 0.2s;
@@ -179,6 +235,7 @@
 /* Support Tab */
 .admin-support-container {
   display: flex;
+  flex-direction: row;
   height: calc(100vh - 200px);
   min-height: 500px;
   background-color: white;
@@ -226,6 +283,7 @@
 .admin-support-user-email {
   font-weight: 500;
   margin-bottom: 5px;
+  word-break: break-all;
 }
 
 .admin-support-preview {
@@ -252,95 +310,83 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  background-color: white;
 }
 
 .admin-support-chat-header {
-  padding: 15px 20px;
-  border-bottom: 1px solid #eaeaea;
-  background-color: white;
+  padding: 15px;
+  border-bottom: 1px solid #eee;
+  background-color: #f8f9fa;
 }
 
 .admin-support-chat-header h3 {
   margin: 0;
   font-size: 16px;
-  color: #2d3748;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .admin-support-messages {
   flex: 1;
-  padding: 20px;
+  padding: 15px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  background-color: #f8f9fa;
-  min-height: 300px;
+  gap: 10px;
 }
 
 .admin-support-message {
   max-width: 70%;
-  padding: 12px 15px;
-  border-radius: 18px;
+  padding: 10px 15px;
+  border-radius: 12px;
   position: relative;
-  overflow-wrap: break-word;
-  word-break: break-word;
-  font-size: 14px;
-  line-height: 1.4;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-  margin: 1px 0;
+  margin-bottom: 5px;
+  word-wrap: break-word;
 }
 
 .admin-support-message.user {
   align-self: flex-start;
-  background-color: white;
-  color: #333;
-  border-radius: 4px 18px 18px 18px;
+  background-color: #f0f2f5;
+  border-bottom-left-radius: 0;
 }
 
 .admin-support-message.admin {
   align-self: flex-end;
-  background-color: #1c4587;
-  color: white;
-  border-radius: 18px 4px 18px 18px;
+  background-color: #d6e4ff;
+  border-bottom-right-radius: 0;
 }
 
 .admin-support-message-content {
-  word-break: break-word;
-  margin-bottom: 5px;
+  font-size: 14px;
+  line-height: 1.4;
 }
 
 .admin-support-message-time {
   font-size: 11px;
-  opacity: 0.8;
-  margin-top: 3px;
+  color: #999;
   text-align: right;
+  margin-top: 5px;
 }
 
 .admin-support-input {
   display: flex;
   padding: 15px;
-  border-top: 1px solid #eaeaea;
-  background-color: white;
+  border-top: 1px solid #eee;
   align-items: flex-end;
 }
 
 .admin-support-input-field {
   flex: 1;
   border: 1px solid #ddd;
-  border-radius: 25px;
-  padding: 12px 15px;
+  border-radius: 20px;
+  padding: 10px 15px;
+  resize: none;
   font-size: 14px;
+  line-height: 1.4;
+  max-height: 120px;
   outline: none;
   transition: border-color 0.2s;
-  resize: none;
-  min-height: 45px;
-  max-height: 120px;
-  margin-right: 10px;
-  line-height: 1.4;
+  font-family: inherit;
 }
 
 .admin-support-input-field:focus {
@@ -348,28 +394,29 @@
 }
 
 .admin-support-send {
-  padding: 10px;
-  width: 45px;
-  height: 45px;
-  background-color: #1c4587;
-  color: white;
+  width: 36px;
+  height: 36px;
   border: none;
   border-radius: 50%;
+  background-color: #1c4587;
+  margin-left: 10px;
+  color: white;
   cursor: pointer;
-  font-weight: 500;
-  transition: background-color 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  transition: background-color 0.2s;
+  flex-shrink: 0;
+  position: relative;
 }
 
 .admin-support-send::after {
   content: "→";
+  font-size: 18px;
 }
 
 .admin-support-send:hover {
-  background-color: #173366;
+  background-color: #15376c;
 }
 
 .admin-support-send:disabled {
@@ -379,113 +426,115 @@
 
 .admin-support-no-selection {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
   height: 100%;
-  color: #777;
-  background-color: #f8f9fa;
-  border-radius: 12px;
+  padding: 20px;
+  color: #888;
+  text-align: center;
 }
 
-/* Verification Tools */
-.admin-verification {
-  max-width: 600px;
+/* Admin Tools */
+.admin-tools-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
-.admin-verification-tool {
+.admin-tools-item {
   background-color: white;
   border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   padding: 20px;
-  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .admin-verification-form {
   display: flex;
+  gap: 10px;
   margin-top: 15px;
-  margin-bottom: 15px;
+  flex-wrap: wrap;
 }
 
 .admin-verification-input {
   flex: 1;
+  min-width: 200px;
   padding: 10px;
   border: 1px solid #ddd;
   border-radius: 4px;
-  outline: none;
+  font-size: 14px;
 }
 
 .admin-verification-input:focus {
   border-color: #1c4587;
+  outline: none;
 }
 
 .admin-verification-button {
+  padding: 10px 15px;
   background-color: #1c4587;
   color: white;
   border: none;
   border-radius: 4px;
-  padding: 10px 15px;
-  margin-left: 10px;
   cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
 }
 
 .admin-verification-result {
   margin-top: 15px;
-  padding: 15px;
-  background-color: #f8f9fa;
+  padding: 10px;
+  background-color: #f0f7ff;
   border-radius: 4px;
-  border-left: 3px solid #1c4587;
+  font-size: 14px;
 }
 
-/* Mobile responsive styles */
+/* Mobile Responsive Styles */
 @media (max-width: 768px) {
   .admin-dashboard {
     padding: 10px;
   }
 
   .admin-tabs {
-    overflow-x: auto;
-    white-space: nowrap;
     padding-bottom: 5px;
     margin-bottom: 15px;
   }
   
-  .admin-tab {
+  .admin-tabs button {
     padding: 10px 15px;
     font-size: 14px;
   }
   
   .admin-content {
-    padding: 10px;
+    padding: 15px;
   }
   
-  .admin-summary-row {
-    flex-direction: column;
+  .admin-stats-grid {
+    grid-template-columns: 1fr;
     gap: 15px;
   }
   
-  .admin-summary-card {
-    width: 100%;
-  }
-  
-  .admin-products-grid {
-    grid-template-columns: 1fr;
+  .admin-recent-section h2 {
+    font-size: 18px;
   }
   
   .admin-support-container {
     flex-direction: column;
     height: auto;
+    min-height: calc(100vh - 250px);
   }
   
   .admin-support-users {
     width: 100%;
     height: 200px;
-    margin-bottom: 15px;
-    border-radius: 12px;
-    margin-right: 0;
+    min-height: 200px;
+    margin-bottom: 10px;
+    border-right: none;
+    border-bottom: 1px solid #eee;
   }
   
   .admin-support-chat {
-    height: calc(100vh - 400px);
+    height: calc(100vh - 450px);
     min-height: 350px;
   }
   
@@ -497,8 +546,25 @@
     max-width: 85%;
   }
   
-  .admin-table-container {
-    overflow-x: auto;
+  .admin-verification-form {
+    flex-direction: column;
+  }
+  
+  .admin-verification-input,
+  .admin-verification-button {
+    width: 100%;
+  }
+  
+  .admin-overview h1,
+  .admin-support h1,
+  .admin-tools h1 {
+    font-size: 20px;
+    margin-bottom: 15px;
+  }
+  
+  .admin-info {
+    padding: 8px;
+    font-size: 14px;
   }
   
   .admin-table th,
