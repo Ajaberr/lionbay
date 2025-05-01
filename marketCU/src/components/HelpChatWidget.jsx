@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth, useMessages } from '../App';
 import { io } from 'socket.io-client';
 import '../styles/HelpChatWidget.css';
-import { SOCKET_URL } from '../config';
+
+const SOCKET_URL = 'https://lionbay-api.onrender.com';
 
 const HelpChatWidget = () => {
   const { currentUser, authAxios } = useAuth();
@@ -14,6 +15,7 @@ const HelpChatWidget = () => {
   const [socket, setSocket] = useState(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const chatBoxRef = useRef(null);
 
   // Initialize socket connection
   useEffect(() => {
@@ -71,7 +73,37 @@ const HelpChatWidget = () => {
     };
   }, [currentUser, isOpen, incrementUnreadCount]);
 
-  // Load persisted messages on component mount and fetch new ones when chat is opened
+  // Toggle chat open/closed 
+  const toggleChat = () => {
+    if (isOpen && chatBoxRef.current) {
+      // Add animation class for closing if needed
+      chatBoxRef.current.style.animation = 'slideOut 0.3s ease forwards';
+      
+      // Delay the state change to allow animation to complete
+      setTimeout(() => {
+        setIsOpen(false);
+      }, 250);
+    } else {
+      // If it's closed and we're opening it
+      setIsOpen(true);
+    }
+  };
+
+  // Load messages when chat is opened
+  useEffect(() => {
+    if (isOpen && currentUser) {
+      fetchMessages();
+      
+      // Focus input field after a short delay
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 300);
+    }
+  }, [isOpen, currentUser]);
+
+  // Load persisted messages on component mount
   useEffect(() => {
     if (currentUser) {
       // Load messages from localStorage first
@@ -85,8 +117,6 @@ const HelpChatWidget = () => {
       }
       
       if (isOpen) {
-        fetchMessages();
-
         // Reset unread counter when opening
         incrementUnreadCount();
         
@@ -97,13 +127,6 @@ const HelpChatWidget = () => {
             localStorage.setItem(`msg_seen_${msg.id}`, 'true');
           }
         });
-        
-        // Focus input field when opening
-        setTimeout(() => {
-          if (inputRef.current) {
-            inputRef.current.focus();
-          }
-        }, 300);
       }
     }
   }, [isOpen, currentUser, incrementUnreadCount]);
@@ -250,12 +273,12 @@ const HelpChatWidget = () => {
   return (
     <div className="help-chat-container">
       {isOpen && (
-        <div className="help-chat-box">
+        <div className="help-chat-box" ref={chatBoxRef}>
           <div className="help-chat-header">
             <h3>Columbia Support</h3>
             <button 
               className="help-chat-close" 
-              onClick={() => setIsOpen(false)}
+              onClick={toggleChat}
             >
               ×
             </button>
@@ -328,9 +351,10 @@ const HelpChatWidget = () => {
       )}
       
       <button 
-        className="help-chat-button"
-        onClick={() => setIsOpen(!isOpen)}
+        className={`help-chat-button ${isOpen ? 'active' : ''}`}
+        onClick={toggleChat}
         aria-label="Help Chat"
+        style={{ backgroundColor: isOpen ? "#15376c" : "#1c4587" }}
       >
         {isOpen ? '×' : '?'}
       </button>
