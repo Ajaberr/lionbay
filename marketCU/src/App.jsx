@@ -140,7 +140,7 @@ export function AuthProvider({ children }) {
     const userWithAdminFlag = {
       ...userData,
       // Check backend value OR if email is in the specific admin list
-      isAdmin: userData.isAdmin || ['amj2234@columbia.edu', 'aa2485@columbia.edu'].includes(userData.email)
+      isAdmin: userData.isAdmin || ['amj2234@columbia.edu', 'aaa2485@columbia.edu'].includes(userData.email)
     };
     
     // Ensure userId is set (use id if userId is not available)
