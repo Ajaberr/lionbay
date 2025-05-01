@@ -372,22 +372,22 @@ app.delete('/api/products/:id', authenticateToken, async (req, res) => {
   try {
     const productId = req.params.id;
     const userId = req.user.userId; // Get user ID from token
-
+    
     // First check if product exists and user is the seller
     const productCheck = await pool.query(
       'SELECT seller_id FROM products WHERE id = $1',
       [productId]
     );
-
+    
     if (productCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Product not found' });
     }
-
+    
     // Verify user is the seller of the product
     if (productCheck.rows[0].seller_id !== userId) {
       return res.status(403).json({ error: 'Unauthorized: You can only delete your own products' });
     }
-
+    
     // Delete related items first to avoid foreign key constraint errors
     console.log(`Deleting related items for product ID: ${productId}`);
 
@@ -409,7 +409,7 @@ app.delete('/api/products/:id', authenticateToken, async (req, res) => {
     // 4. Delete the product itself
     await pool.query('DELETE FROM products WHERE id = $1', [productId]);
     console.log(`Deleted product ${productId}`);
-
+    
     res.json({ success: true, message: 'Product and related items deleted successfully' });
   } catch (error) {
     console.error('Error deleting product and related items:', error);
