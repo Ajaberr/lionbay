@@ -51,13 +51,13 @@ export function AuthProvider({ children }) {
       console.log("Loading stored user data:", storedUser);
       
       // Make sure userId is defined
-      if (storedUser && !storedUser.id && storedUser.id) {
+      if (storedUser && !storedUser.userId && storedUser.id) {
         console.log("Converting id to userId for consistency");
-        storedUser.id = storedUser.id;
+        storedUser.userId = storedUser.id; // Fixed typo: Assign to userId
       }
       
       // Check for required fields
-      if (storedUser && !storedUser.id) {
+      if (storedUser && !storedUser.userId) { // Fixed typo: Check userId
         console.warn("Stored user data missing userId:", storedUser);
       }
     } catch (e) {
@@ -66,7 +66,7 @@ export function AuthProvider({ children }) {
     }
     
     if (storedToken && storedUser) {
-      console.log("Using stored authentication data, token exists and user:", storedUser?.id);
+      console.log("Using stored authentication data, token exists and user:", storedUser?.userId); // Fixed typo: Log userId
       setToken(storedToken);
       setCurrentUser(storedUser);
     } else {
@@ -87,8 +87,8 @@ export function AuthProvider({ children }) {
       const { token, user } = response.data;
       
       // Ensure userId is set (use id if userId is not available)
-      if (user && !user.id && user.id) {
-        user.id = user.id;
+      if (user && !user.userId && user.id) { // Fixed typo: Check userId
+        user.userId = user.id; // Fixed typo: Assign to userId
       }
       
       localStorage.setItem('token', token);
@@ -116,8 +116,8 @@ export function AuthProvider({ children }) {
       const { token, user } = response.data;
       
       // Ensure userId is set (use id if userId is not available)
-      if (user && !user.id && user.id) {
-        user.id = user.id;
+      if (user && !user.userId && user.id) { // Fixed typo: Check userId
+        user.userId = user.id; // Fixed typo: Assign to userId
       }
       
       localStorage.setItem('token', token);
@@ -143,8 +143,8 @@ export function AuthProvider({ children }) {
     };
     
     // Ensure userId is set (use id if userId is not available)
-    if (userWithAdminFlag && !userWithAdminFlag.id && userWithAdminFlag.id) {
-      userWithAdminFlag.id = userWithAdminFlag.id;
+    if (userWithAdminFlag && !userWithAdminFlag.userId && userWithAdminFlag.id) { // Fixed typo: Check userId
+      userWithAdminFlag.userId = userWithAdminFlag.id; // Fixed typo: Assign to userId
     }
     
     console.log("User verified and logged in:", userWithAdminFlag);
