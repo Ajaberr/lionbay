@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../App';
 import { io } from 'socket.io-client';
 import '../styles/AdminDashboard.css';
-
-const SOCKET_URL = 'https://lionbay-api.onrender.com';
+import { SOCKET_URL } from '../config';
 
 const AdminDashboard = () => {
   const { currentUser, authAxios } = useAuth();

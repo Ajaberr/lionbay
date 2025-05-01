@@ -12,8 +12,9 @@ export default defineConfig(({ command, mode }) => {
   const isProd = mode === 'production'
   
   // Get the API URL from env or use default
+  // Support new domain name while maintaining backward compatibility
   const apiUrl = env.VITE_API_BASE_URL || (isProd 
-    ? 'https://lionbay-api.onrender.com' 
+    ? 'https://lionbay.org' 
     : 'http://localhost:3003')
   
   console.log(`Mode: ${mode}, API URL: ${apiUrl}`)

@@ -2,8 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth, useMessages } from '../App';
 import { io } from 'socket.io-client';
 import '../styles/HelpChatWidget.css';
-
-const SOCKET_URL = 'https://lionbay-api.onrender.com';
+import { SOCKET_URL } from '../config';
 
 const HelpChatWidget = () => {
   const { currentUser, authAxios } = useAuth();

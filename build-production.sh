@@ -47,7 +47,8 @@ export default defineConfig({
     proxy: {
       '/api': {
         // In production, API requests will be served by the Render backend
-        target: 'https://lionbay-api.onrender.com',
+        // Updated to support both domains
+        target: 'https://lionbay.org',
         changeOrigin: true,
       }
     }
