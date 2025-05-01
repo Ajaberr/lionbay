@@ -1803,19 +1803,19 @@ function ChatPage() {
 
   // Check if a message was sent by the current user
   const isMessageFromCurrentUser = (message) => {
-    if (!currentUser?.id) {
-      console.warn(`[isMessageFromCurrentUser] Warning: currentUser.id still unavailable for Msg ID: ${message?.id}`);
+    if (!currentUser?.userId) {
+      console.warn(`[isMessageFromCurrentUser] Warning: currentUser.userId still unavailable for Msg ID: ${message?.id}`);
       return false;
     }
-    const isMatch = message?.sender_id === currentUser.id;
-    console.log(`[isMessageFromCurrentUser] Msg ID: ${message?.id} - Comparing sender ${message?.sender_id} vs current ${currentUser.id} -> Match: ${isMatch}`);
+    const isMatch = message?.sender_id === currentUser.userId;
+    console.log(`[isMessageFromCurrentUser] Msg ID: ${message?.id} - Comparing sender ${message?.sender_id} vs current ${currentUser.userId} -> Match: ${isMatch}`);
     return isMatch;
   };
 
   // Add this function to determine message styling
   const getMessageClassName = (message) => {
-    if (!currentUser?.id) {
-       console.error(`[getMessageClassName] Error: currentUser.id unavailable when getting class for Msg ID: ${message?.id}`);
+    if (!currentUser?.userId) {
+       console.error(`[getMessageClassName] Error: currentUser.userId unavailable when getting class for Msg ID: ${message?.id}`);
        return "message error"; // Return an error state class
     }
     const isSent = isMessageFromCurrentUser(message);
@@ -1845,9 +1845,9 @@ function ChatPage() {
   );
   }
 
-  // 3. *After* chat data is loaded, explicitly check for currentUser.id
-  if (!currentUser?.id) {
-    console.warn("ChatPage: Chat data loaded, but currentUser.id is still missing. Waiting for user context...");
+  // 3. *After* chat data is loaded, explicitly check for currentUser.userId
+  if (!currentUser?.userId) {
+    console.warn("ChatPage: Chat data loaded, but currentUser.userId is still missing. Waiting for user context...");
     return (
       <div className="chat-page">
         <div className="loading">Finalizing user information...</div>
@@ -1856,7 +1856,7 @@ function ChatPage() {
   }
 
   // --- If all checks pass, render the chat ---
-  console.log(`>>> ChatPage Render: All checks passed. User ID: ${currentUser.id}`);
+  console.log(`>>> ChatPage Render: All checks passed. User ID: ${currentUser.userId}`);
 
   return (
     <div className="chat-page">
