@@ -107,11 +107,21 @@ export function AuthProvider({ children }) {
 
   // Method for email verification login
   const verifyEmailLogin = (token, userData) => {
+    // Admin emails now include the ones used in the server
+    const adminEmails = [
+      'admin@lionbay.com', 
+      'support@lionbay.com', 
+      'aaa2485@columbia.edu', 
+      'amj2234@columbia.edu'
+    ];
+    
     // Make sure we store the isAdmin flag in the user data
     const userWithAdminFlag = {
       ...userData,
-      isAdmin: userData.isAdmin || ['admin@lionbay.com', 'support@lionbay.com'].includes(userData.email)
+      isAdmin: userData.isAdmin || adminEmails.includes(userData.email)
     };
+    
+    console.log('Login as admin?', userWithAdminFlag.isAdmin, 'Email:', userData.email);
     
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(userWithAdminFlag));
@@ -464,31 +474,48 @@ function SignInPage() {
 
   const handleVerifyCode = async (e) => {
     e.preventDefault();
+    if (!email || !verificationCode) return;
+    
     setLoading(true);
     setError(null);
-
+    
     try {
       const response = await axios.post(`${API_BASE_URL}/auth/verify-email`, {
         email,
         verificationCode
       });
       
-      // Check if this is an admin email
-      const isAdmin = ['admin@lionbay.com', 'support@lionbay.com'].includes(email);
-      
-      const userData = {
-        userId: response.data.user.id,
-        email: email,
-        isAdmin: isAdmin || response.data.user.isAdmin
-      };
-      
-      console.log('User authenticated:', userData);
-      
-      verifyEmailLogin(response.data.token, userData);
-      navigate('/home');
-    } catch (error) {
-      console.error('Verification error:', error.response?.data || error.message);
-      setError(error.response?.data?.error || 'Invalid verification code. Please try again.');
+      if (response.data && response.data.success) {
+        // Admin emails - should match server and auth provider
+        const adminEmails = [
+          'admin@lionbay.com', 
+          'support@lionbay.com', 
+          'aaa2485@columbia.edu', 
+          'amj2234@columbia.edu'
+        ];
+        
+        // Check if the email belongs to an admin
+        const isAdmin = adminEmails.includes(email);
+        
+        const userData = {
+          ...response.data.user,
+          email,
+          isAdmin: isAdmin || response.data.user.isAdmin
+        };
+        
+        console.log('Verified login with admin status:', userData.isAdmin);
+        
+        // Verify email login will handle admin flag and storage
+        verifyEmailLogin(response.data.token, userData);
+        
+        // Redirect to home page
+        navigate('/home');
+      } else {
+        setError('Verification failed. Please try again.');
+      }
+    } catch (err) {
+      console.error('Verification error:', err.response?.data || err.message);
+      setError(err.response?.data?.error || 'Verification failed. Please try again.');
     } finally {
       setLoading(false);
     }
