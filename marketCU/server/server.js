@@ -33,7 +33,9 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
   ? [
   'https://lionbay-api.onrender.com',
   'https://lionbay.com',
-      'https://lionbay.onrender.com',
+  'https://lionbay.org',
+  'https://www.lionbay.org',
+  'https://lionbay.onrender.com',
   process.env.FRONTEND_URL
     ].filter(Boolean)
   : (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:3003,http://localhost:5173').split(',');
@@ -542,23 +544,53 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
     
-    const chatsResult = await pool.query(
-      `SELECT c.*, 
-        p.name as product_name, p.price as product_price, p.image_path as product_image,
-        u1.email as buyer_email, u2.email as seller_email,
-        (SELECT MAX(created_at) FROM messages WHERE chat_id = c.id) as last_message_at,
-        (SELECT message FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message,
-        (SELECT sender_id FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_sender_id
-      FROM chats c
-      JOIN products p ON c.product_id = p.id
-      JOIN users u1 ON c.buyer_id = u1.id
-      JOIN users u2 ON c.seller_id = u2.id
-      WHERE c.buyer_id = $1 OR c.seller_id = $1 
-      ORDER BY last_message_at DESC NULLS LAST, c.created_at DESC`,
-      [userId]
-    );
-    
-    res.json(chatsResult.rows);
+    // First check if messages has a 'content' or 'message' column
+    try {
+      // Try a query to check the column structure
+      const columnCheck = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'messages' AND column_name = 'content'
+      `);
+      
+      // Use appropriate query based on column existence
+      const useContentColumn = columnCheck.rows.length > 0;
+      
+      const chatsQuery = `
+        SELECT c.*, 
+          p.name as product_name, p.price as product_price, p.image_path as product_image,
+          u1.email as buyer_email, u2.email as seller_email,
+          (SELECT MAX(created_at) FROM messages WHERE chat_id = c.id) as last_message_at,
+          (SELECT ${useContentColumn ? 'content' : 'message'} FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message,
+          (SELECT sender_id FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_sender_id
+        FROM chats c
+        JOIN products p ON c.product_id = p.id
+        JOIN users u1 ON c.buyer_id = u1.id
+        JOIN users u2 ON c.seller_id = u2.id
+        WHERE c.buyer_id = $1 OR c.seller_id = $1 
+        ORDER BY last_message_at DESC NULLS LAST, c.created_at DESC
+      `;
+      
+      const chatsResult = await pool.query(chatsQuery, [userId]);
+      res.json(chatsResult.rows);
+    } catch (columnError) {
+      console.error('Error checking column structure:', columnError);
+      // If the column check fails, use a fallback approach without referencing messages
+      const fallbackQuery = `
+        SELECT c.*, 
+          p.name as product_name, p.price as product_price, p.image_path as product_image,
+          u1.email as buyer_email, u2.email as seller_email 
+        FROM chats c
+        JOIN products p ON c.product_id = p.id
+        JOIN users u1 ON c.buyer_id = u1.id
+        JOIN users u2 ON c.seller_id = u2.id
+        WHERE c.buyer_id = $1 OR c.seller_id = $1 
+        ORDER BY c.created_at DESC
+      `;
+      
+      const fallbackResult = await pool.query(fallbackQuery, [userId]);
+      res.json(fallbackResult.rows);
+    }
   } catch (error) {
     console.error('Error fetching chats:', error);
     res.status(500).json({ error: 'Failed to fetch chats' });
@@ -634,13 +666,78 @@ app.get('/api/chats/:id/messages', authenticateToken, async (req, res) => {
   }
 });
 
+// Delete a specific chat and its messages, also remove from cart if it was added
+app.delete('/api/chats/:id', authenticateToken, async (req, res) => {
+  try {
+    const chatId = req.params.id;
+    const userId = req.user.userId;
+    
+    // Verify chat exists and the user has access to it
+    const chatResult = await pool.query(
+      'SELECT * FROM chats WHERE id = $1',
+      [chatId]
+    );
+    
+    if (chatResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+    
+    const chat = chatResult.rows[0];
+    
+    // Ensure user is authorized to delete this chat (must be buyer or seller)
+    if (chat.buyer_id !== userId && chat.seller_id !== userId) {
+      return res.status(403).json({ error: 'Unauthorized to delete this chat' });
+    }
+    
+    // Start transaction
+    await pool.query('BEGIN');
+    
+    try {
+      // 1. Delete associated cart items (if user is the buyer)
+      if (chat.buyer_id === userId) {
+        await pool.query(
+          'DELETE FROM cart_items WHERE user_id = $1 AND product_id = $2',
+          [userId, chat.product_id]
+        );
+      }
+      
+      // 2. Delete all messages in the chat
+      await pool.query(
+        'DELETE FROM messages WHERE chat_id = $1',
+        [chatId]
+      );
+      
+      // 3. Delete the chat itself
+      await pool.query(
+        'DELETE FROM chats WHERE id = $1',
+        [chatId]
+      );
+      
+      // Commit the transaction
+      await pool.query('COMMIT');
+      
+      res.json({ 
+        success: true, 
+        message: 'Chat and all associated messages have been deleted successfully' 
+      });
+    } catch (err) {
+      // Rollback transaction on error
+      await pool.query('ROLLBACK');
+      throw err;
+    }
+  } catch (error) {
+    console.error('Error deleting chat:', error);
+    res.status(500).json({ error: 'Failed to delete chat' });
+  }
+});
+
 // We're removing the unread-count endpoint and implementing it client-side
 
 app.post('/api/chats/:id/messages', authenticateToken, async (req, res) => {
   try {
     const chat_id = req.params.id;
     const sender_id = req.user.userId;
-    const { message } = req.body;
+    const { content } = req.body;
     
     // Verify chat exists and user has access
     const chatResult = await pool.query(
@@ -661,10 +758,10 @@ app.post('/api/chats/:id/messages', authenticateToken, async (req, res) => {
     
     // Create new message 
     const newMessageResult = await pool.query(
-      `INSERT INTO messages (chat_id, sender_id, message) 
+      `INSERT INTO messages (chat_id, sender_id, content) 
       VALUES ($1, $2, $3) 
       RETURNING *`,
-      [chat_id, sender_id, message]
+      [chat_id, sender_id, content]
     );
     
     // Get the sender email
@@ -1166,7 +1263,7 @@ io.on('connection', (socket) => {
         return;
       }
       
-      console.log(`Message received from user ${socket.user.userId} in chat ${chat_id}: ${message}`);
+      console.log(`Message received from user ${socket.user.userId} in chat ${chat_id}: ${message.content}`);
       
       // Verify the user is a participant in this chat
       const chatResult = await pool.query(
@@ -1189,8 +1286,8 @@ io.on('connection', (socket) => {
       
       // Insert the message into the database
       const newMessageResult = await pool.query(
-        'INSERT INTO messages (chat_id, sender_id, message) VALUES ($1, $2, $3) RETURNING *',
-        [chat_id, socket.user.userId, message]
+        'INSERT INTO messages (chat_id, sender_id, content) VALUES ($1, $2, $3) RETURNING *',
+        [chat_id, socket.user.userId, message.content]
       );
       
       // Get sender email
@@ -1486,7 +1583,7 @@ app.post('/api/auth/verify-email', async (req, res) => {
     const token = jwt.sign(
       { userId: user.id, email: user.email },
       process.env.JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '3d' }
     );
     
     res.json({

@@ -8,9 +8,14 @@
 // Determine if we're in production
 const isProduction = import.meta.env.PROD;
 
+// Check if the current domain is lionbay.org
+const isLionBayOrg = typeof window !== 'undefined' && 
+  (window.location.hostname === 'lionbay.org' || 
+   window.location.hostname === 'www.lionbay.org');
+
 // Environment variables with fallbacks
 const apiBasePrefix = isProduction
-  ? 'https://lionbay-api.onrender.com'
+  ? (isLionBayOrg ? 'https://lionbay-api.onrender.com' : 'https://lionbay-api.onrender.com')
   : import.meta.env.VITE_API_BASE_URL || 'http://localhost:3003';
 
 // Base API URL
