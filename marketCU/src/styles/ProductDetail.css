@@ -15,6 +15,7 @@
 .product-detail-left {
   flex: 1;
   min-width: 300px;
+  position: relative;
 }
 
 .product-detail-right {
@@ -46,7 +47,30 @@
 }
 
 .product-detail-description {
-  margin-top: 20px;
+  margin-bottom: 2rem;
+  max-height: none;
+  overflow: visible;
+  width: 100%;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+  box-sizing: border-box;
+}
+
+.product-detail-description h3 {
+  font-size: 1.2rem;
+  margin-bottom: 0.5rem;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+
+.product-detail-description p {
+  white-space: pre-line;
+  line-height: 1.6;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
 }
 
 .product-actions {
@@ -85,8 +109,8 @@
 /* Owner badge for product detail page */
 .owner-badge {
   position: absolute;
-  top: 20px;
-  right: 20px;
+  top: 10px;
+  right: 10px;
   background-color: var(--primary-color);
   color: white;
   padding: 8px 16px;

@@ -101,7 +101,6 @@ function HomePage() {
             <h3>Sign Up in Seconds</h3>
             <p>Just verify your Columbia email - no passwords, no lengthy forms. One click and you're in.</p>
           </div>
-          <div className="step-connector"></div>
           <div className="step-card">
             <div className="step-icon">
               <i className="fas fa-tag"></i>
@@ -110,7 +109,6 @@ function HomePage() {
             <h3>List or Browse</h3>
             <p>Post items you want to sell or browse what others are offering right on campus.</p>
           </div>
-          <div className="step-connector"></div>
           <div className="step-card">
             <div className="step-icon">
               <i className="fas fa-comments"></i>
@@ -119,7 +117,6 @@ function HomePage() {
             <h3>Connect & Chat</h3>
             <p>Message through our secure chat and arrange to meet on campus for exchange.</p>
           </div>
-          <div className="step-connector"></div>
           <div className="step-card">
             <div className="step-icon">
               <i className="fas fa-handshake"></i>

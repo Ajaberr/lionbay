@@ -1074,7 +1074,6 @@ function MarketPage() {
                       <div className="product-details">
                         <div className="product-title">{product.name}</div>
                         <div className="product-specs">
-                          <div>{product.details}</div>
                           <div>{product.category}</div>
                           <div>{product.condition}</div>
                         </div>
@@ -1246,12 +1245,12 @@ function ProductDetailPage() {
   return (
     <div className="product-detail-page">
       <div className="product-detail-container">
-        {isOwner && (
-          <div className="owner-badge">
-            <span>Your Listing</span>
-          </div>
-        )}
         <div className="product-detail-left">
+          {isOwner && (
+            <div className="owner-badge">
+              <span>Your Listing</span>
+            </div>
+          )}
           <img 
             src={product.image_path || "/api/placeholder/600/400"} 
             alt={product.name} 
@@ -1442,10 +1441,28 @@ function CreateProductPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('Form submission started'); // Add log to track form submission
     setIsSubmitting(true);
     setImageError('');
 
     try {
+      // Required field checks
+      if (!formData.category) {
+        setToastMessage('Category is required');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
+      }
+      
+      if (!formData.condition) {
+        setToastMessage('Condition is required');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
+      }
+
       // Validate image URL if provided and using URL method
       if (uploadMethod === 'url' && formData.image_path) {
         const isValidImage = await validateImageUrl(formData.image_path);
@@ -1456,7 +1473,98 @@ function CreateProductPage() {
         }
       }
 
-      const response = await authAxios.post('/products', formData);
+      // Check if image is provided
+      if (!formData.image_path) {
+        setImageError('Please provide an image for your product');
+        setToastMessage('Product image is required');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Validate fields with character limits
+      if (!formData.name.trim()) {
+        setToastMessage('Product name is required');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
+      } else if (formData.name.length < 3) {
+        setToastMessage('Product name must be at least 3 characters long');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
+      } else if (formData.name.length > 30) {
+        setToastMessage('Product name must be 30 characters or less');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Price validation
+      if (!formData.price) {
+        setToastMessage('Price is required');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
+      } 
+      
+      // Convert to a number for comparison
+      const priceValue = Number(formData.price);
+      
+      if (isNaN(priceValue) || priceValue <= 0) {
+        setToastMessage('Price must be a positive number');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
+      } else if (priceValue > 1000000) { // Stricter price limit
+        setToastMessage('Price must not exceed $1,000,000');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!formData.details.trim()) {
+        setToastMessage('Product details are required');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
+      } else if (formData.details.length < 10) {
+        setToastMessage('Product details must be at least 10 characters long');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
+      } else if (formData.details.length > 1000) {
+        setToastMessage('Product details must be less than 1000 characters');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
+      }
+
+      console.log('All validations passed, submitting to API');
+      
+      // Create product with validated data
+      const productData = {
+        name: formData.name.trim(),
+        details: formData.details.trim(),
+        condition: formData.condition,
+        price: priceValue,
+        category: formData.category,
+        image_path: formData.image_path
+      };
+      
+      console.log('Product data to submit:', productData);
+      
+      const response = await authAxios.post('/products', productData);
       console.log('Product created successfully:', response.data);
       
       // Show success toast instead of alert
@@ -1471,7 +1579,7 @@ function CreateProductPage() {
       console.error('Error creating product:', error);
       
       // Show error toast instead of alert
-      setToastMessage('Failed to create product. Please try again.');
+      setToastMessage(error.response?.data?.error || 'Failed to create product. Please try again.');
       setToastType('error');
       setShowToast(true);
     } finally {
@@ -1500,7 +1608,11 @@ function CreateProductPage() {
               onChange={handleChange}
               required
               placeholder="e.g., MacBook Pro 2023"
+              maxLength={30}
             />
+            <small className={`character-count ${formData.name.length > 20 ? formData.name.length > 27 ? 'limit-reached' : 'limit-warning' : ''}`}>
+              {formData.name.length}/30 characters
+            </small>
           </div>
           
           <div className="form-group">
@@ -1515,7 +1627,9 @@ function CreateProductPage() {
               min="0.01"
               step="0.01"
               placeholder="e.g., 999.99"
+              max="1000000"
             />
+            <small className="price-limit-note">Maximum price: $1,000,000</small>
           </div>
           
           <div className="form-group">
@@ -1566,7 +1680,12 @@ function CreateProductPage() {
               onChange={handleChange}
               required
               placeholder="Describe your item, including features and any defects"
-            />
+              maxLength={1000}
+              rows="5"
+            ></textarea>
+            <small className={`character-count ${formData.details.length > 800 ? formData.details.length > 950 ? 'limit-reached' : 'limit-warning' : ''}`}>
+              {formData.details.length}/1000 characters
+            </small>
           </div>
           
           <div className="form-group">
@@ -1630,6 +1749,7 @@ function CreateProductPage() {
             type="submit" 
             className="create-product-button"
             disabled={isSubmitting}
+            onClick={() => console.log('Submit button clicked')}
           >
             {isSubmitting ? 'Creating...' : 'List Item for Sale'}
           </button>
@@ -3204,8 +3324,8 @@ function ProductManagementPage() {
     } else if (formData.name.length < 3) {
       errors.name = "Product name must be at least 3 characters long";
       hasError = true;
-    } else if (formData.name.length > 100) {
-      errors.name = "Product name must be less than 100 characters";
+    } else if (formData.name.length > 30) {
+      errors.name = "Product name must be 30 characters or less";
       hasError = true;
     }
 
@@ -3217,7 +3337,7 @@ function ProductManagementPage() {
       errors.price = "Price must be a positive number";
       hasError = true;
     } else if (formData.price > 1000000) {
-      errors.price = "Price must be less than $1,000,000";
+      errors.price = "Price must not exceed $1,000,000";
       hasError = true;
     }
 
@@ -3243,8 +3363,8 @@ function ProductManagementPage() {
     } else if (formData.details.length < 10) {
       errors.details = "Product details must be at least 10 characters long";
       hasError = true;
-    } else if (formData.details.length > 2000) {
-      errors.details = "Product details must be less than 2000 characters";
+    } else if (formData.details.length > 1000) {
+      errors.details = "Product details must be less than 1000 characters";
       hasError = true;
     }
 
@@ -3408,6 +3528,7 @@ function ProductManagementPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('ProductManagementPage form submission started'); // Add log to track form submission
     
     if (!validateForm()) {
       setToastMessage("Please fix form errors before submitting");
@@ -3422,39 +3543,52 @@ function ProductManagementPage() {
         finalCategory = formData.other_category;
       }
       
+      // Convert price to a number and enforce limit
+      const priceValue = Number(formData.price);
+      if (isNaN(priceValue) || priceValue <= 0) {
+        setToastMessage('Price must be a positive number');
+        setToastType('error');
+        setShowToast(true);
+        return;
+      } else if (priceValue > 1000000) {
+        setToastMessage('Price must not exceed $1,000,000');
+        setToastType('error');
+        setShowToast(true);
+        return;
+      }
+      
       const productData = {
-        name: formData.name,
-        details: formData.details,
+        name: formData.name.trim(),
+        details: formData.details.trim(),
         condition: formData.condition,
-        price: formData.price,
+        price: priceValue,
         category: finalCategory,
         image_path: formData.image_path
       };
       
-      let response;
+      console.log('Sending product data:', productData);
       
       if (selectedProduct) {
         // Update existing product
-        response = await authAxios.put(`/products/${selectedProduct.id}`, productData);
+        const response = await authAxios.put(`/products/${selectedProduct.id}`, productData);
+        console.log('Product updated successfully:', response.data);
         setToastMessage("Product updated successfully!");
       } else {
         // Create new product
-        response = await authAxios.post('/products', productData);
+        const response = await authAxios.post('/products', productData);
+        console.log('Product created successfully:', response.data);
         setToastMessage("Product created successfully!");
       }
       
       setToastType('success');
       setShowToast(true);
       
-      // Refresh product list
-      await fetchUserProducts();
-      
-      // Close forms
+      // Reset form and fetch updated products
       setShowEditForm(false);
       setShowAddForm(false);
-      
+      fetchUserProducts();
     } catch (error) {
-      console.error("Error saving product:", error);
+      console.error('Error saving product:', error);
       setToastMessage(error.response?.data?.error || "Failed to save product. Please try again.");
       setToastType('error');
       setShowToast(true);
@@ -3544,7 +3678,11 @@ function ProductManagementPage() {
                   onChange={handleChange}
                   placeholder="e.g., MacBook Pro 2023"
                   className={formErrors.name ? 'error-border' : ''}
+                  maxLength={30}
                 />
+                <small className={`character-count ${formData.name.length > 20 ? formData.name.length > 27 ? 'limit-reached' : 'limit-warning' : ''}`}>
+                  {formData.name.length}/30 characters
+                </small>
                 {formErrors.name && <div className="form-error">{formErrors.name}</div>}
               </div>
               
@@ -3560,7 +3698,9 @@ function ProductManagementPage() {
                   step="0.01"
                   placeholder="e.g., 999.99"
                   className={formErrors.price ? 'error-border' : ''}
+                  max="1000000"
                 />
+                <small className="price-limit-note">Maximum price: $1,000,000</small>
                 {formErrors.price && <div className="form-error">{formErrors.price}</div>}
               </div>
               
@@ -3625,7 +3765,12 @@ function ProductManagementPage() {
                   onChange={handleChange}
                   placeholder="Describe your item, including features and any defects"
                   className={formErrors.details ? 'error-border' : ''}
-                />
+                  maxLength={1000}
+                  rows="5"
+                ></textarea>
+                <small className={`character-count ${formData.details.length > 800 ? formData.details.length > 950 ? 'limit-reached' : 'limit-warning' : ''}`}>
+                  {formData.details.length}/1000 characters
+                </small>
                 {formErrors.details && <div className="form-error">{formErrors.details}</div>}
               </div>
               
