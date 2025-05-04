@@ -37,7 +37,7 @@
 .product-detail-price {
   font-size: 28px;
   font-weight: bold;
-  color: #0067b8;
+  color: var(--primary-color);
   margin-bottom: 20px;
 }
 
@@ -65,21 +65,21 @@
 }
 
 .contact-seller-button {
-  background-color: #0067b8;
+  background-color: var(--primary-color);
   color: white;
 }
 
 .contact-seller-button:hover {
-  background-color: #005aa9;
+  background-color: var(--hover-color);
 }
 
 .add-to-cart-button {
-  background-color: #28a745;
+  background-color: var(--success-color);
   color: white;
 }
 
 .add-to-cart-button:hover {
-  background-color: #218838;
+  background-color: #3d9140;
 }
 
 /* Owner badge for product detail page */
@@ -87,7 +87,7 @@
   position: absolute;
   top: 20px;
   right: 20px;
-  background-color: #007bff;
+  background-color: var(--primary-color);
   color: white;
   padding: 8px 16px;
   border-radius: 20px;
@@ -101,13 +101,13 @@
   padding: 15px;
   background-color: #f8f9fa;
   border-radius: 8px;
-  border-left: 4px solid #007bff;
+  border-left: 4px solid var(--primary-color);
 }
 
 .manage-listing-button {
   margin-top: 10px;
   padding: 10px 20px;
-  background-color: #007bff;
+  background-color: var(--primary-color);
   color: white;
   border: none;
   border-radius: 4px;
@@ -117,7 +117,7 @@
 }
 
 .manage-listing-button:hover {
-  background-color: #0069d9;
+  background-color: var(--hover-color);
 }
 
 /* Loading and error states */

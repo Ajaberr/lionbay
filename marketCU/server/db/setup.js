@@ -168,19 +168,19 @@ async function setupDatabase() {
       const user1Token = jwt.sign(
         { userId: users[0].id, email: users[0].email },
         process.env.JWT_SECRET,
-        { expiresIn: '7d' }
+        { expiresIn: '3d' }
       );
 
       const user2Token = jwt.sign(
         { userId: users[1].id, email: users[1].email },
         process.env.JWT_SECRET,
-        { expiresIn: '7d' }
+        { expiresIn: '3d' }
       );
       
       const adminToken = jwt.sign(
         { userId: users.find(u => u.email === 'aaa2485@columbia.edu').id, email: 'aaa2485@columbia.edu' },
         process.env.JWT_SECRET,
-        { expiresIn: '7d' }
+        { expiresIn: '3d' }
       );
 
       console.log('\nTest User Tokens (for manual testing):\n');

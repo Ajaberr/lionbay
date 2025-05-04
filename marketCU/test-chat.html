@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MarketCU Chat API Tester</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #003366;
+        }
+        .card {
+            background: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        button {
+            background: #003366;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #002244;
+        }
+        pre {
+            background: #f1f1f1;
+            padding: 10px;
+            border-radius: 4px;
+            overflow: auto;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>MarketCU Chat API Tester</h1>
+    
+    <div class="card">
+        <h2>Login</h2>
+        <div class="form-group">
+            <label for="email">Email:</label>
+            <input type="text" id="email" placeholder="Enter your Columbia email">
+        </div>
+        <div class="form-group">
+            <label for="password">Password:</label>
+            <input type="text" id="password" placeholder="Enter your password">
+        </div>
+        <button onclick="login()">Login</button>
+        <div id="loginResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>Authentication</h2>
+        <div class="form-group">
+            <label for="token">JWT Token:</label>
+            <input type="text" id="token" placeholder="Enter token or login above">
+        </div>
+        <button onclick="testAuth()">Test Authentication</button>
+        <div id="authResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>Get Chats</h2>
+        <button onclick="getChats()">Fetch Chats</button>
+        <div id="chatsResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>Get Messages</h2>
+        <div class="form-group">
+            <label for="chatId">Chat ID:</label>
+            <input type="text" id="chatId" placeholder="Enter chat ID">
+        </div>
+        <button onclick="getMessages()">Fetch Messages</button>
+        <div id="messagesResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>Send Message</h2>
+        <div class="form-group">
+            <label for="sendChatId">Chat ID:</label>
+            <input type="text" id="sendChatId" placeholder="Enter chat ID">
+        </div>
+        <div class="form-group">
+            <label for="messageContent">Message:</label>
+            <textarea id="messageContent" rows="3" placeholder="Type your message here"></textarea>
+        </div>
+        <button onclick="sendMessage()">Send Message</button>
+        <div id="sendResult"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3003/api';
+        let currentToken = '';
+
+        // Helper function to update result sections
+        function updateResult(elementId, content, isError = false) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = '';
+            
+            if (typeof content === 'object') {
+                const pre = document.createElement('pre');
+                pre.textContent = JSON.stringify(content, null, 2);
+                
+                if (isError) {
+                    pre.classList.add('error');
+                } else {
+                    pre.classList.add('success');
+                }
+                
+                element.appendChild(pre);
+            } else {
+                element.innerHTML = isError 
+                    ? `<p class="error">${content}</p>` 
+                    : `<p class="success">${content}</p>`;
+            }
+        }
+
+        // Login function
+        async function login() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            if (!email || !password) {
+                updateResult('loginResult', 'Please enter both email and password', true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    updateResult('loginResult', data, true);
+                    return;
+                }
+                
+                // Save token
+                currentToken = data.token;
+                document.getElementById('token').value = currentToken;
+                
+                updateResult('loginResult', 'Login successful! Token has been added to the token field.');
+            } catch (error) {
+                updateResult('loginResult', `Error: ${error.message}`, true);
+            }
+        }
+
+        // Test authentication
+        async function testAuth() {
+            const token = document.getElementById('token').value || currentToken;
+            
+            if (!token) {
+                updateResult('authResult', 'No token provided', true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/user`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    updateResult('authResult', data, true);
+                    return;
+                }
+                
+                updateResult('authResult', data);
+            } catch (error) {
+                updateResult('authResult', `Error: ${error.message}`, true);
+            }
+        }
+
+        // Get chats
+        async function getChats() {
+            const token = document.getElementById('token').value || currentToken;
+            
+            if (!token) {
+                updateResult('chatsResult', 'No token provided', true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/chats`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    updateResult('chatsResult', data, true);
+                    return;
+                }
+                
+                updateResult('chatsResult', data);
+                
+                // If there's at least one chat, pre-fill the chat ID fields
+                if (data.length > 0) {
+                    document.getElementById('chatId').value = data[0].id;
+                    document.getElementById('sendChatId').value = data[0].id;
+                }
+            } catch (error) {
+                updateResult('chatsResult', `Error: ${error.message}`, true);
+            }
+        }
+
+        // Get messages
+        async function getMessages() {
+            const token = document.getElementById('token').value || currentToken;
+            const chatId = document.getElementById('chatId').value;
+            
+            if (!token) {
+                updateResult('messagesResult', 'No token provided', true);
+                return;
+            }
+            
+            if (!chatId) {
+                updateResult('messagesResult', 'No chat ID provided', true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/chats/${chatId}/messages`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    updateResult('messagesResult', data, true);
+                    return;
+                }
+                
+                updateResult('messagesResult', data);
+            } catch (error) {
+                updateResult('messagesResult', `Error: ${error.message}`, true);
+            }
+        }
+
+        // Send message
+        async function sendMessage() {
+            const token = document.getElementById('token').value || currentToken;
+            const chatId = document.getElementById('sendChatId').value;
+            const content = document.getElementById('messageContent').value;
+            
+            if (!token) {
+                updateResult('sendResult', 'No token provided', true);
+                return;
+            }
+            
+            if (!chatId) {
+                updateResult('sendResult', 'No chat ID provided', true);
+                return;
+            }
+            
+            if (!content) {
+                updateResult('sendResult', 'No message content provided', true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/chats/${chatId}/messages`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ content })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    updateResult('sendResult', data, true);
+                    return;
+                }
+                
+                updateResult('sendResult', data);
+                
+                // Clear the message input
+                document.getElementById('messageContent').value = '';
+            } catch (error) {
+                updateResult('sendResult', `Error: ${error.message}`, true);
+            }
+        }
+    </script>
+</body>
+</html> 

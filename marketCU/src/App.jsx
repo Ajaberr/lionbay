@@ -1,5 +1,5 @@
 import { useState, useContext, createContext, useEffect, useRef, Fragment as Fragment2 } from 'react';
-import { BrowserRouter as Router, Route, Routes, Link, Navigate, useParams, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Link, Navigate, useParams, useNavigate, useLocation } from 'react-router-dom';
 import './styles/App.css';
 import './App.css';
 import './styles/ProductDetail.css';
@@ -15,6 +15,7 @@ import PageTitle from './components/PageTitle';
 import SwipeDiscovery from './components/SwipeDiscovery';
 import DiscoverFeature from './components/DiscoverFeature';
 import { API_BASE_URL, SOCKET_URL } from './config';
+import Todo from './components/Todo';
 
 // Define product categories for consistency
 const PRODUCT_CATEGORIES = [
@@ -66,9 +67,16 @@ export function AuthProvider({ children }) {
     }
     
     if (storedToken && storedUser) {
-      console.log("Using stored authentication data, token exists and user:", storedUser?.userId); // Fixed typo: Log userId
-      setToken(storedToken);
-      setCurrentUser(storedUser);
+      // Check if token is expired
+      if (isTokenExpired(storedToken)) {
+        console.log("Stored token is expired, logging out");
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+      } else {
+        console.log("Using stored authentication data, token exists and user:", storedUser?.userId); // Fixed typo: Log userId
+        setToken(storedToken);
+        setCurrentUser(storedUser);
+      }
     } else {
       console.log("No stored authentication data or missing user/token");
     }
@@ -161,6 +169,9 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('user');
     setToken(null);
     setCurrentUser(null);
+    
+    // Navigate to the home page after logout
+    window.location.href = '/';
   };
 
   // Function to update user profile data
@@ -187,14 +198,53 @@ export function AuthProvider({ children }) {
     baseURL: API_BASE_URL
   });
   
+  // Function to check if token is expired
+  const isTokenExpired = (token) => {
+    if (!token) return true;
+    
+    try {
+      // Extract the payload from the JWT token
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const payload = JSON.parse(window.atob(base64));
+      
+      // Check if the token has expired
+      const currentTime = Math.floor(Date.now() / 1000);
+      return payload.exp < currentTime;
+    } catch (error) {
+      console.error('Error checking token expiration:', error);
+      return true; // Assume token is expired if there's an error
+    }
+  };
+  
   authAxios.interceptors.request.use(
     (config) => {
       if (token) {
+        // Check if token is expired
+        if (isTokenExpired(token)) {
+          console.log('Token expired, logging out user');
+          // Logout user when token is expired
+          logout();
+          throw new axios.Cancel('Token expired, user logged out');
+        }
         config.headers['Authorization'] = `Bearer ${token}`;
       }
       return config;
     },
     (error) => {
+      return Promise.reject(error);
+    }
+  );
+  
+  // Add response interceptor to handle 401 errors (token expired)
+  authAxios.interceptors.response.use(
+    (response) => response, 
+    (error) => {
+      if (error.response && error.response.status === 401) {
+        // Token expired or invalid
+        console.log('Received 401 error, logging out user');
+        logout();
+      }
       return Promise.reject(error);
     }
   );
@@ -262,10 +312,217 @@ export function CartProvider({ children }) {
   );
 }
 
+// Create a context for message notifications
+const MessageContext = createContext();
+
+export function useMessages() {
+  return useContext(MessageContext);
+}
+
+export function MessageProvider({ children }) {
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadChats, setUnreadChats] = useState(new Set());
+  const { authAxios, isAuthenticated, currentUser } = useAuth();
+  const [socket, setSocket] = useState(null);
+  
+  // Update unread message count
+  const updateUnreadCount = async () => {
+    if (!isAuthenticated || !currentUser?.userId) return;
+    
+    try {
+      // Fetch all chats to check for unread messages
+      const response = await authAxios.get('/chats');
+      
+      if (response.data) {
+        // Track both count and which chats have unread messages
+        let count = 0;
+        const unreadChatIds = new Set();
+        const chats = response.data;
+        
+        // Consider a chat unread if the last message is not from the current user
+        chats.forEach(chat => {
+          if (chat.last_message && 
+              chat.last_message_sender_id !== currentUser.userId && 
+              (!chat.last_read_time || new Date(chat.last_message_at) > new Date(chat.last_read_time))) {
+            count++;
+            unreadChatIds.add(chat.id);
+          }
+        });
+        
+        setUnreadCount(count);
+        setUnreadChats(unreadChatIds);
+        
+        // Store the unread state in localStorage to persist across page refreshes
+        localStorage.setItem('unreadCount', count.toString());
+        localStorage.setItem('unreadChats', JSON.stringify(Array.from(unreadChatIds)));
+      }
+    } catch (error) {
+      console.error('Error updating unread message count:', error);
+    }
+  };
+  
+  // Load initial unread state from localStorage on mount
+  useEffect(() => {
+    if (isAuthenticated) {
+      const savedCount = localStorage.getItem('unreadCount');
+      const savedChats = localStorage.getItem('unreadChats');
+      
+      if (savedCount) {
+        setUnreadCount(parseInt(savedCount, 10));
+      }
+      
+      if (savedChats) {
+        try {
+          const chatIds = JSON.parse(savedChats);
+          setUnreadChats(new Set(chatIds));
+        } catch (e) {
+          console.error('Error parsing saved unread chats:', e);
+        }
+      }
+    }
+  }, [isAuthenticated]);
+  
+  // Set up socket to listen for new messages
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser?.userId) return;
+    
+    const token = localStorage.getItem('token');
+    const newSocket = io(SOCKET_URL, {
+      auth: { token },
+      transports: ['websocket', 'polling']
+    });
+    
+    newSocket.on('connect', () => {
+      console.log('Message notification socket connected');
+      // Join personal room to get direct notifications
+      newSocket.emit('join_personal_room', currentUser.userId);
+    });
+    
+    // Listen for new messages
+    newSocket.on('new_message', (message) => {
+      if (message.sender_id !== currentUser.userId) {
+        // If message is not from current user and not currently viewing that chat
+        const currentPath = window.location.pathname;
+        const isViewingChat = currentPath === `/chats/${message.chat_id}`;
+        
+        if (!isViewingChat) {
+          // If not viewing the specific chat, mark as unread
+          setUnreadCount(prev => prev + 1);
+          setUnreadChats(prev => {
+            const updated = new Set(prev);
+            updated.add(message.chat_id);
+            
+            // Update localStorage
+            localStorage.setItem('unreadCount', (prev.size + 1).toString());
+            localStorage.setItem('unreadChats', JSON.stringify(Array.from(updated)));
+            
+            return updated;
+          });
+        }
+      }
+    });
+    
+    setSocket(newSocket);
+    
+    // Initial fetch
+    updateUnreadCount();
+    
+    return () => {
+      if (newSocket) newSocket.disconnect();
+    };
+  }, [isAuthenticated, currentUser]);
+  
+  // Set up polling as a fallback
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setUnreadCount(0);
+      setUnreadChats(new Set());
+      localStorage.removeItem('unreadCount');
+      localStorage.removeItem('unreadChats');
+      return;
+    }
+    
+    // Polling interval (less frequent since we have sockets)
+    const interval = setInterval(updateUnreadCount, 60000); // Every minute
+    
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
+  
+  // Reset all unread counts
+  const resetAllUnreadCounts = () => {
+    setUnreadCount(0);
+    setUnreadChats(new Set());
+    localStorage.removeItem('unreadCount');
+    localStorage.removeItem('unreadChats');
+  };
+  
+  // Reset unread count for a specific chat
+  const resetUnreadCount = (chatId) => {
+    if (!chatId) {
+      // If no specific chatId provided, reset all
+      resetAllUnreadCounts();
+      return;
+    }
+    
+    setUnreadChats(prev => {
+      const updated = new Set(prev);
+      if (updated.has(chatId)) {
+        updated.delete(chatId);
+        setUnreadCount(prev => Math.max(0, prev - 1));
+        
+        // Update localStorage
+        localStorage.setItem('unreadCount', Math.max(0, unreadCount - 1).toString());
+        localStorage.setItem('unreadChats', JSON.stringify(Array.from(updated)));
+      }
+      return updated;
+    });
+  };
+  
+  // Check if a specific chat has unread messages
+  const isChatUnread = (chatId) => {
+    return unreadChats.has(chatId);
+  };
+  
+  // Method to manually increment count (primarily for testing)
+  const incrementUnreadCount = (chatId) => {
+    setUnreadCount(prev => prev + 1);
+    if (chatId) {
+      setUnreadChats(prev => {
+        const updated = new Set(prev);
+        updated.add(chatId);
+        
+        // Update localStorage
+        localStorage.setItem('unreadCount', (unreadCount + 1).toString());
+        localStorage.setItem('unreadChats', JSON.stringify(Array.from(updated)));
+        
+        return updated;
+      });
+    }
+  };
+  
+  return (
+    <MessageContext.Provider value={{ 
+      unreadCount, 
+      resetUnreadCount, 
+      incrementUnreadCount, 
+      isChatUnread,
+      updateUnreadCount
+    }}>
+      {children}
+    </MessageContext.Provider>
+  );
+}
+
 function MessageCount() {
-  // The useMessages hook has been removed, so we'll use a static badge instead
-  // Return a static dot indicator for notifications
-  return '•';
+  const { unreadCount } = useMessages();
+  
+  // Only show count if there are unread messages
+  if (unreadCount > 0) {
+    return unreadCount;
+  }
+  
+  // Return empty if no unread messages
+  return '';
 }
 
 function CartCount() {
@@ -274,10 +531,9 @@ function CartCount() {
   return cartCount || 0;
 }
 
-export function HeadBar() {
+export function HeadBar({ openSidebar }) {
   const { isAuthenticated, currentUser, logout, authAxios } = useAuth();
   const [profileData, setProfileData] = useState({ fullName: '', profileImage: '' });
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   
   const handleResize = () => {
@@ -323,10 +579,6 @@ export function HeadBar() {
     };
   }, []);
   
-  const toggleSidebar = () => {
-    setSidebarOpen(!sidebarOpen);
-  };
-  
   return (
     <div className="header">
       <div className="leftside">
@@ -351,14 +603,18 @@ export function HeadBar() {
               </span>
             </span>
             <Link to="/cart" className="nav-link">Cart <span className="cart-badge"><CartCount /></span></Link>
-            <Link to="/chats" className="nav-link">DMs <span className="message-badge">•</span></Link>
+            <Link to="/chats" className="nav-link">DMs <span className="message-badge"><MessageCount /></span></Link>
             {windowWidth > 1160 && (
-            <button className="sign-in-btn" onClick={logout}>logout</button>
+            <button className="sign-in-btn" onClick={() => {
+              logout();
+              // Force navigation to home page
+              window.location.href = '/';
+            }}>logout</button>
             )}
             
             {/* Mobile menu toggle button */}
             {windowWidth <= 1160 && (
-              <button className="mobile-menu-toggle" onClick={toggleSidebar} aria-label="Open menu">
+              <button className="mobile-menu-toggle" onClick={openSidebar} aria-label="Open menu">
                 <i className="fas fa-bars menu-icon"></i>
               </button>
             )}
@@ -372,22 +628,13 @@ export function HeadBar() {
             
             {/* Mobile menu toggle button */}
             {windowWidth <= 1160 && (
-              <button className="mobile-menu-toggle" onClick={toggleSidebar} aria-label="Open menu">
+              <button className="mobile-menu-toggle" onClick={openSidebar} aria-label="Open menu">
                 <i className="fas fa-bars menu-icon"></i>
               </button>
             )}
           </>
         )}
       </div>
-      
-      {/* Mobile Sidebar */}
-      <MobileSidebar 
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        isAuthenticated={isAuthenticated}
-        isVerified={isAuthenticated}
-        onLogout={logout}
-      />
     </div>
   );
 }
@@ -1402,109 +1649,390 @@ function CreateProductPage() {
 }
 
 function ChatsListPage() {
-  const { authAxios, isAuthenticated, currentUser } = useAuth();
+  const { authAxios, currentUser, isAuthenticated } = useAuth();
+  const { setMessages } = useMessages();  
   const navigate = useNavigate();
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const socketRef = useRef(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [chatToDelete, setChatToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+  const [chatToComplete, setChatToComplete] = useState(null);
+  const [completing, setCompleting] = useState(false);
   const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const [toastType, setToastType] = useState('error');
+  const [toastMessage, setToastMessage] = useState("");
+  const [toastType, setToastType] = useState("success");
 
+  // Initialize socket connection
   useEffect(() => {
     if (!isAuthenticated) {
-      navigate('/');
       return;
     }
 
-    const fetchChats = async () => {
-      try {
-        console.log('Fetching chats for user');
-        const response = await authAxios.get('/chats');
-        console.log('Chats received:', response.data);
-        setChats(response.data);
-      } catch (err) {
-        console.error('Error fetching chats:', err.response?.data || err.message);
-        setToastMessage(err.response?.data?.error || 'Failed to load chats. Please try again.');
-        setToastType('error');
-        setShowToast(true);
-      } finally {
-        setLoading(false);
+    const token = localStorage.getItem('token');
+    const newSocket = io(SOCKET_URL, {
+      auth: { token },
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
+    });
+
+    socketRef.current = newSocket;
+
+    newSocket.on('connect', () => {
+      console.log('Socket connected for chats list');
+    });
+
+    newSocket.on('connect_error', (error) => {
+      console.error('Socket connection error in chats list:', error.message);
+    });
+
+    newSocket.on('error', (error) => {
+      console.error('Socket error in chats list:', error);
+    });
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
       }
     };
+  }, [isAuthenticated]);
 
+  // Listen for new messages to update chat list
+  useEffect(() => {
+    if (!socketRef.current || !currentUser?.userId) return;
+
+    const updateChatWithNewMessage = (message) => {
+      if (!message || !message.chat_id) return;
+      
+      console.log('Received message for chat:', message.chat_id);
+      
+      if (currentUser?.userId && message.sender_id === currentUser.userId) {
+        console.log('Ignoring our own message in chat list update');
+        return;
+      }
+      
+      setChats(prevChats => {
+        return prevChats.map(chat => {
+          if (chat.id === message.chat_id) {
+            // Increment unread count if the user is the recipient
+            const isRecipient = chat.seller_id === currentUser.userId && message.sender_id === chat.buyer_id ||
+                                chat.buyer_id === currentUser.userId && message.sender_id === chat.seller_id;
+            
+            // Update last message details
+            return {
+              ...chat,
+              last_message: message.content,
+              last_message_at: message.created_at,
+              unread_count: isRecipient ? (chat.unread_count || 0) + 1 : chat.unread_count
+            };
+          }
+          return chat;
+        });
+      });
+    };
+
+    socketRef.current.on('new_message', updateChatWithNewMessage);
+
+    return () => {
+      socketRef.current.off('new_message', updateChatWithNewMessage);
+    };
+  }, [socketRef.current, currentUser?.userId]);
+
+  // Fetch chats data
+  useEffect(() => {
     fetchChats();
   }, [authAxios, isAuthenticated, navigate]);
 
-  if (loading) return (
-    <div className="chats-list-page">
-      <div className="loading">Loading chats...</div>
-    </div>
-  );
+  const fetchChats = async (showLoading = true) => {
+    if (!isAuthenticated || !authAxios) {
+      return;
+    }
 
-  return (
-    <div className="chats-list-page">
-      <div className="chats-header">
-      <h1>Messages</h1>
-        <div className="role-legend">
-          <div className="legend-item"><span className="role-dot seller"></span> You are selling</div>
-          <div className="legend-item"><span className="role-dot buyer"></span> You are buying</div>
-        </div>
-        <div className="expiration-notice">
-          <i className="fas fa-info-circle"></i>
-          <span>Chats automatically expire after 7 days of inactivity</span>
+    if (showLoading) {
+      setLoading(true);
+    }
+
+    try {
+      const response = await authAxios.get('/chats');
+      console.log('Fetched chats:', response.data);
+      setChats(response.data);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching chats:', err);
+      setError('Failed to load chats. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteChat = async (e, chatId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setChatToDelete(chatId);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteChat = async () => {
+    if (!chatToDelete || deleting) return;
+    
+    setDeleting(true);
+    try {
+      await authAxios.delete(`/chats/${chatToDelete}`);
+      setChats(prevChats => prevChats.filter(chat => chat.id !== chatToDelete));
+      setToastMessage('Chat deleted successfully. The item has been removed from your cart.');
+      setToastType('success');
+      setShowToast(true);
+    } catch (err) {
+      console.error('Error deleting chat:', err);
+      setToastMessage('Failed to delete chat. Please try again.');
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  const handleCompletePayment = (e, chatId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setChatToComplete(chatId);
+    setShowCompleteConfirm(true);
+  };
+
+  const confirmCompletePayment = async () => {
+    if (!chatToComplete || completing) return;
+    
+    setCompleting(true);
+    try {
+      // This would connect to your API endpoint for completing payments
+      // await authAxios.post(`/chats/${chatToComplete}/complete-payment`);
+      
+      // For now, just update the UI state
+      setChats(prevChats => prevChats.map(chat => 
+        chat.id === chatToComplete 
+          ? {...chat, payment_completed: true} 
+          : chat
+      ));
+      setToastMessage('Payment marked as completed.');
+      setToastType('success');
+      setShowToast(true);
+    } catch (err) {
+      console.error('Error completing payment:', err);
+      setToastMessage('Failed to complete payment. Please try again.');
+      setToastType('error');
+      setShowToast(true);
+    } finally {
+      setCompleting(false);
+      setShowCompleteConfirm(false);
+    }
+  };
+
+  const navigateToChat = (chatId) => {
+    navigate(`/chats/${chatId}`);
+  };
+
+  const formatLastMessageTime = (timestamp) => {
+    if (!timestamp) return '';
+    
+    const messageDate = new Date(timestamp);
+    const now = new Date();
+    const diffInMilliseconds = now - messageDate;
+    const diffInHours = diffInMilliseconds / (1000 * 60 * 60);
+    const diffInDays = diffInHours / 24;
+    
+    // If the message is from today, show time
+    if (diffInHours < 24 && messageDate.getDate() === now.getDate()) {
+      return messageDate.toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: true 
+      });
+    }
+    
+    // If the message is from yesterday
+    if (diffInDays < 2) {
+      return 'Yesterday';
+    }
+    
+    // If the message is from this week
+    if (diffInDays < 7) {
+      const options = { weekday: 'short' };
+      return messageDate.toLocaleDateString(undefined, options);
+    }
+    
+    // Otherwise, show the date
+    return messageDate.toLocaleDateString([], {
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (loading) {
+    return (
+      <div className="chats-page">
+        <div className="container">
+          <div className="loading">Loading chats...</div>
         </div>
       </div>
-      
-      {chats.length === 0 ? (
-        <div className="no-chats">
-          <p>You don't have any messages yet.</p>
-          <Link to="/market" className="browse-button">Browse Products</Link>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="chats-page">
+        <div className="container">
+          <div className="error">{error}</div>
         </div>
-      ) : (
-        <div className="chats-list">
-          {chats.map(chat => {
-            // Determine if the current user is the seller or buyer in this chat
-            const isSeller = currentUser.userId === chat.seller_id;
-            
-            return (
-              <Link to={`/chats/${chat.id}`} key={chat.id} className={`chat-item ${isSeller ? 'seller-chat' : 'buyer-chat'}`}>
-              <div className="chat-item-image">
-                <img 
-                    src={chat.product_image || "/api/placeholder/150/150"} 
-                    alt={chat.product_name || "Product"} 
-                />
-              </div>
-              <div className="chat-item-details">
-                  <div className="chat-role-indicator">
-                    <span className={`role-badge ${isSeller ? 'seller' : 'buyer'}`}>
-                      {isSeller ? 'SELLING' : 'BUYING'}
-                    </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="chats-page">
+      <div className="chats-container">
+        <div className="chats-header">
+          <h1>Messages</h1>
+        </div>
+        
+        <div className="role-legend">
+          <div className="legend-item">
+            <span className="role-dot seller"></span>
+            <span>You're selling</span>
+          </div>
+          <div className="legend-item">
+            <span className="role-dot buyer"></span>
+            <span>You're buying</span>
+          </div>
+        </div>
+        
+        {chats.length === 0 ? (
+          <div className="no-chats">
+            <p>You don't have any conversations yet</p>
+            <Link to="/market" className="browse-button">Browse Products</Link>
+          </div>
+        ) : (
+          <div className="chats-list">
+            {chats.map(chat => {
+              const isSeller = currentUser?.userId === chat.seller_id;
+              const chatPartnerEmail = isSeller ? chat.buyer_email : chat.seller_email;
+              const chatClass = isSeller ? 'seller-chat' : 'buyer-chat';
+              
+              return (
+                <div 
+                  key={chat.id} 
+                  className="chat-item-container"
+                >
+                  <div
+                    className={`chat-item ${chatClass} ${chat.unread_count > 0 ? 'unread' : ''}`}
+                    onClick={() => navigateToChat(chat.id)}
+                  >
+                    <div className="chat-item-image">
+                      <img 
+                        src={chat.product_image || '/placeholder-image.jpg'} 
+                        alt={chat.product_name} 
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = '/placeholder-image.jpg';
+                        }}
+                      />
+                    </div>
+                    
+                    <div className="chat-item-details">
+                      <h3>{chat.product_name}</h3>
+                      <p className="chat-item-price">${parseFloat(chat.product_price).toLocaleString()}</p>
+                      <p className="chat-last-message">
+                        {chat.last_message || 'No messages yet'}
+                      </p>
+                      <div className="chat-partner">
+                        <span className={`role-dot ${isSeller ? 'seller' : 'buyer'}`}></span>
+                        <span>{isSeller ? 'Selling to' : 'Buying from'}: {chatPartnerEmail}</span>
+                        <span className="chat-time">{formatLastMessageTime(chat.last_message_at)}</span>
+                      </div>
+                    </div>
+                    
+                    {chat.unread_count > 0 && (
+                      <div className="unread-badge">
+                        {chat.unread_count > 9 ? '9+' : chat.unread_count}
+                      </div>
+                    )}
+                    
+                    <Todo 
+                      onDelete={() => {
+                        setChatToDelete(chat.id);
+                        setShowDeleteConfirm(true);
+                      }}
+                      onComplete={() => {
+                        setChatToComplete(chat.id);
+                        setShowCompleteConfirm(true);
+                      }}
+                      isSeller={isSeller}
+                      paymentCompleted={chat.payment_completed}
+                    />
                   </div>
-                  <h3 className="chat-item-title">{chat.product_name || "Unknown Product"}</h3>
-                  <p className="chat-item-price">${parseFloat(chat.product_price || 0).toLocaleString()}</p>
-                <p className="chat-contact">
-                    {isSeller
-                      ? `Buyer: ${chat.buyer_email}` 
-                      : `Seller: ${chat.seller_email}`}
-                </p>
-                {chat.last_message && (
-                  <p className="chat-last-message">
-                    <span className="message-sender">
-                      {chat.last_message_sender_id === currentUser.userId 
-                        ? 'You: ' 
-                        : chat.last_message_sender_id === chat.seller_id 
-                          ? 'Seller: ' 
-                          : 'Buyer: '}
-                    </span>
-                    {chat.last_message.length > 40 
-                      ? chat.last_message.substring(0, 40) + '...' 
-                      : chat.last_message}
-                  </p>
-                )}
-              </div>
-            </Link>
-            );
-          })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      
+      {showDeleteConfirm && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>Delete Chat</h3>
+            <p>This will delete the chat and remove the item from your cart. This cannot be undone.</p>
+            <div className="modal-actions">
+              <button 
+                className="modal-btn cancel" 
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button 
+                className="modal-btn delete" 
+                onClick={handleDeleteChat}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {showCompleteConfirm && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>Complete Payment</h3>
+            <p>Mark this transaction as paid in person? This action cannot be undone.</p>
+            <div className="modal-actions">
+              <button 
+                className="modal-btn cancel" 
+                onClick={() => setShowCompleteConfirm(false)}
+                disabled={completing}
+              >
+                Cancel
+              </button>
+              <button 
+                className="modal-btn complete" 
+                onClick={confirmCompletePayment}
+                disabled={completing}
+              >
+                {completing ? 'Processing...' : 'Complete Payment'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
       
@@ -1530,10 +2058,16 @@ function ChatPage() {
   const [socketConnected, setSocketConnected] = useState(false);
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const [socket, setSocket] = useState(null);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('error');
+  const [userScrolled, setUserScrolled] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+  const [completing, setCompleting] = useState(false);
 
   // For debugging
   useEffect(() => {
@@ -1623,6 +2157,11 @@ function ChatPage() {
         console.log('Adding new message from other user to state:', message.id);
         return [...prevMessages, message];
       });
+      
+      // Auto-scroll to bottom unless user has manually scrolled up
+      if (!userScrolled) {
+        scrollToBottom();
+      }
     };
 
     socket.on('new_message', handleNewMessage);
@@ -1632,7 +2171,7 @@ function ChatPage() {
       console.log(`Removing socket listener for chat ${id}`);
       socket.off('new_message', handleNewMessage);
     };
-  }, [socket, currentUser?.userId, id]); // Dependencies: socket, user ID, chat ID
+  }, [socket, currentUser?.userId, id, userScrolled]); // Dependencies: socket, user ID, chat ID, userScrolled
 
   // Fetch chat and message data
   useEffect(() => {
@@ -1657,10 +2196,9 @@ function ChatPage() {
           console.log('Messages received:', messagesResponse.data.length);
 
           // Initial scroll to bottom after loading messages
+          // Using a short timeout to ensure DOM is updated
           setTimeout(() => {
-            if (messagesEndRef.current) {
-              messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
-            }
+            scrollToBottom('auto');
           }, 100);
         }
       } catch (err) {
@@ -1691,10 +2229,40 @@ function ChatPage() {
     };
   }, [authAxios, id, isAuthenticated, navigate]); // Dependencies: only fetch when these change
 
-  // Scroll to bottom when messages change
+  // Function to scroll to bottom of messages
+  const scrollToBottom = (behavior = 'smooth') => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: behavior });
+    }
+  };
+
+  // Scroll to bottom when messages change (new message sent or received)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' }); // Use auto for instant scroll
-  }, [messages]);
+    if (messages.length > 0 && !userScrolled) {
+      scrollToBottom();
+    }
+  }, [messages, userScrolled]);
+
+  // Reset userScrolled when chat changes
+  useEffect(() => {
+    setUserScrolled(false);
+  }, [id]);
+
+  // Track user scroll to determine if auto-scroll should be disabled
+  const handleScroll = (e) => {
+    if (messagesContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+      const bottomThreshold = 100; // pixels from bottom
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < bottomThreshold;
+      
+      // Only update if state needs to change
+      if (userScrolled && isAtBottom) {
+        setUserScrolled(false);
+      } else if (!userScrolled && !isAtBottom) {
+        setUserScrolled(true);
+      }
+    }
+  };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -1723,7 +2291,7 @@ function ChatPage() {
       id: tempId,
       chat_id: id,
       sender_id: currentUser.userId, // Use currentUser.userId here
-      message: messageText,
+      content: messageText,
       created_at: new Date().toISOString(),
       sender_email: currentUser.email,
       temporary: true,
@@ -1733,13 +2301,21 @@ function ChatPage() {
     // Add to state with immutable update pattern
     setMessages(prev => [...prev, optimisticMessage]);
     
+    // Reset userScrolled when sending a message
+    setUserScrolled(false);
+    
+    // Ensure scroll to bottom occurs after message is added
+    setTimeout(() => {
+      scrollToBottom();
+    }, 10);
+    
     try {
       let finalMessageId = tempId;
       
       // Make sure we're using the correct API URL
       console.log('Sending via REST API');
       const response = await authAxios.post(`/chats/${id}/messages`, {
-        message: messageText
+        content: messageText
       });
       
       console.log('Message sent successfully via REST API:', response.data);
@@ -1764,6 +2340,55 @@ function ChatPage() {
       setShowToast(true);
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleDeleteChat = async () => {
+    if (deleting) return;
+    
+    setDeleting(true);
+    try {
+      await authAxios.delete(`/chats/${id}`);
+      setToastMessage("Chat deleted successfully. The item has been removed from your cart.");
+      setToastType("success");
+      setShowToast(true);
+      
+      // Navigate back to chats list after a short delay
+      setTimeout(() => {
+        navigate('/chats');
+      }, 1500);
+    } catch (err) {
+      console.error('Error deleting chat:', err);
+      setToastMessage(err.response?.data?.error || 'Failed to delete chat');
+      setToastType('error');
+      setShowToast(true);
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
+  const handleCompletePayment = async () => {
+    if (completing) return;
+    
+    setCompleting(true);
+    try {
+      // This would connect to your API endpoint for completing payments
+      // await authAxios.post(`/chats/${id}/complete-payment`);
+      
+      setToastMessage("Payment marked as completed successfully.");
+      setToastType("success");
+      setShowToast(true);
+      
+      // Close the modal after completion
+      setShowCompleteConfirm(false);
+      setCompleting(false);
+    } catch (err) {
+      console.error('Error completing payment:', err);
+      setToastMessage(err.response?.data?.error || 'Failed to complete payment');
+      setToastType('error');
+      setShowToast(true);
+      setCompleting(false);
+      setShowCompleteConfirm(false);
     }
   };
 
@@ -1859,30 +2484,52 @@ function ChatPage() {
   // --- If all checks pass, render the chat ---
   console.log(`>>> ChatPage Render: All checks passed. User ID: ${currentUser.userId}`);
 
+  const isSeller = currentUser.userId === chat?.seller_id;
+
   return (
     <div className="chat-page">
       <div className="chat-container">
         <div className="chat-header">
-          <Link to="/chats" className="back-button">← Back to Messages</Link>
-          <div className="chat-header-info">
-            <h2>{chat?.product_name || "Unknown Product"}</h2>
-            <p className="chat-header-price">${parseFloat(chat?.product_price || 0).toLocaleString()}</p>
-            <p className="chat-header-users">
-              {currentUser.userId === chat?.seller_id 
-                ? `Chatting with buyer: ${chat?.buyer_email}` 
-                : `Chatting with seller: ${chat?.seller_email}`}
-            </p>
+          <div className="chat-header-left">
+            <Link to="/chats" className="back-button">
+              <i className="fas fa-arrow-left"></i>
+            </Link>
+            <div className="chat-header-info">
+              <h2>{chat?.product_name || "Unknown Product"}</h2>
+              <p className="chat-header-price">${parseFloat(chat?.product_price || 0).toLocaleString()}</p>
+            </div>
           </div>
-          <div className="role-indicator">
-            <span className={`role-badge ${currentUser.userId === chat?.seller_id ? 'seller' : 'buyer'}`}>
-              {currentUser.userId === chat?.seller_id ? 'SELLING' : 'BUYING'}
-                    </span>
+          <div className="chat-header-right">
+            <div className="role-indicator">
+              <span className={`role-badge ${isSeller ? 'seller' : 'buyer'}`}>
+                {isSeller ? 'SELLING' : 'BUYING'}
+              </span>
+            </div>
+            <button 
+              className="complete-payment-button" 
+              onClick={() => setShowCompleteConfirm(true)}
+              disabled={completing}
+            >
+              Complete
+            </button>
+            <button 
+              className="delete-chat-button" 
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={deleting}
+            >
+              <i className="fas fa-trash"></i>
+            </button>
           </div>
         </div>
         
-        <div className="messages-container" ref={messagesEndRef}>
+        <div 
+          className="messages-container" 
+          ref={messagesContainerRef}
+          onScroll={handleScroll}
+        >
           {messages.length === 0 ? (
             <div className="no-messages">
+              <div className="no-messages-icon">💬</div>
               <p>No messages yet. Start the conversation!</p>
             </div>
           ) : (
@@ -1890,11 +2537,10 @@ function ChatPage() {
               {messages.map((message) => (
                 <div
                   key={message.id || `temp-${message.tempId}`}
-                  // Call directly, function will use context's currentUser.userId
                   className={getMessageClassName(message)}
                 >
                   <div className="message-content">
-                    <p>{message.message}</p>
+                    <p>{message.content}</p>
                     <span className="message-time">
                       {formatMessageTime(message.created_at)}
                       {message.temporary && <span className="message-status">Sending...</span>}
@@ -1902,6 +2548,7 @@ function ChatPage() {
                   </div>
                 </div>
               ))}
+              <div ref={messagesEndRef} className="messages-end-ref"></div>
             </>
           )}
         </div>
@@ -1931,7 +2578,7 @@ function ChatPage() {
             {sending ? '...' : ''}
           </button>
         </form>
-          </div>
+      </div>
       
       {showToast && (
         <ToastNotification
@@ -1939,6 +2586,56 @@ function ChatPage() {
           type={toastType}
           onClose={() => setShowToast(false)}
         />
+      )}
+      
+      {showDeleteConfirm && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>Delete Chat</h3>
+            <p>This will delete the chat and remove the item from your cart. This cannot be undone.</p>
+            <div className="modal-actions">
+              <button 
+                className="modal-btn cancel" 
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button 
+                className="modal-btn delete" 
+                onClick={handleDeleteChat}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {showCompleteConfirm && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3>Complete Payment</h3>
+            <p>Mark this transaction as paid in person? This action cannot be undone.</p>
+            <div className="modal-actions">
+              <button 
+                className="modal-btn cancel" 
+                onClick={() => setShowCompleteConfirm(false)}
+                disabled={completing}
+              >
+                Cancel
+              </button>
+              <button 
+                className="modal-btn complete" 
+                onClick={handleCompletePayment}
+                disabled={completing}
+              >
+                {completing ? 'Processing...' : 'Complete Payment'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1951,23 +2648,39 @@ function ProtectedRoute({ children }) {
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+  };
 
   return (
     <Router>
       <AuthProvider>
         <CartProvider>
-            <PageTitle />
-        <AppContent />
+          <MessageProvider>
+            <AppContent setSidebarOpen={setSidebarOpen} />
+            <MobileSidebar 
+              isOpen={sidebarOpen} 
+              onClose={() => setSidebarOpen(false)} 
+              isAuthenticated={isAuthenticated}
+              isVerified={isAuthenticated}
+              onLogout={handleLogout}
+            />
+          </MessageProvider>
         </CartProvider>
       </AuthProvider>
     </Router>
   );
 }
 
-function AppContent() {
-  const { isAuthenticated, currentUser } = useAuth();
+function AppContent({ setSidebarOpen }) {
+  const { isAuthenticated, currentUser, logout } = useAuth();
   const [toast, setToast] = useState(null);
   const [globalSocket, setGlobalSocket] = useState(null);
+  const location = useLocation(); // Add useLocation hook to get current path
   
   // Set up global socket connection for unread messages
   useEffect(() => {
@@ -2000,15 +2713,6 @@ function AppContent() {
       console.error('Socket connection error:', error);
     });
     
-    // REMOVED: Listener for 'unread_message' as the feature is removed
-    // newSocket.on('unread_message', (message) => {
-    //   console.log('Received unread message notification');
-    //   // setHasUnreadMessages(true); // This was causing the error
-    // });
-    //
-    // You can add other global socket listeners here if needed in the future
-    // e.g., newSocket.on('global_notification', (data) => { ... });
-    
     setGlobalSocket(newSocket);
     
     return () => {
@@ -2017,11 +2721,22 @@ function AppContent() {
         newSocket.disconnect();
       }
     };
-  }, [isAuthenticated, currentUser]); // Removed setHasUnreadMessages from dependency array
+  }, [isAuthenticated, currentUser]);
+  
+  const handleLogout = () => {
+    if (logout) {
+      logout();
+      // Force navigation to home page
+      window.location.href = '/';
+    }
+  };
+  
+  // Check if current route is a chat page
+  const isOnChatPage = location.pathname.match(/^\/chats\/[^/]+$/);
   
   return (
     <>
-      <HeadBar />
+      <HeadBar openSidebar={() => setSidebarOpen(true)} />
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/home" element={<HomePage />} />
@@ -2067,17 +2782,13 @@ function AppContent() {
             <SwipeDiscovery />
           </GrayscalePreview>
         } />
-        {/* Profile route is commented out as it's coming soon */}
-        {/* <Route path="/profile" element={
-          <GrayscalePreview isAuthenticated={isAuthenticated}>
-            <ProfilePage />
-          </GrayscalePreview>
-        } /> */}
         {/* Catch-all route for non-existent paths */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-      <SiteFooter />
-      <HelpChatWidget />
+      {/* Render SiteFooter only if not on a chat page */}
+      {!isOnChatPage && <SiteFooter />}
+      {/* Render HelpChatWidget only if not on a chat page */}
+      {!isOnChatPage && <HelpChatWidget />}
       {toast && <ToastNotification {...toast} onClose={() => setToast(null)} />}
     </>
   );

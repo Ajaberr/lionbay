@@ -4,7 +4,7 @@
   top: 80px;
   min-width: 300px;
   max-width: 400px;
-  background: linear-gradient(135deg, rgba(254, 184, 70, 0.6), rgba(254, 184, 70, 0.4));
+  background: linear-gradient(135deg, rgba(255, 199, 44, 0.6), rgba(255, 199, 44, 0.4));
   color: #333;
   border-radius: 16px;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
@@ -127,12 +127,12 @@
 }
 
 .toast-notification.warning {
-  background: linear-gradient(to right, rgba(254, 184, 70, 0.2), rgba(254, 184, 70, 0.1));
-  border-left: 4px solid #feb846;
+  background: linear-gradient(to right, rgba(255, 199, 44, 0.2), rgba(255, 199, 44, 0.1));
+  border-left: 4px solid #FFC72C;
 }
 
 .toast-notification.warning .toast-icon {
-  background-color: rgba(254, 184, 70, 0.8);
+  background-color: rgba(255, 199, 44, 0.8);
   color: white;
 }
 
