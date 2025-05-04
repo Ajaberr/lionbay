@@ -4,14 +4,34 @@ import { useAuth } from '../App';
 import axios from 'axios';
 import '../App.css';
 import DiscoverFeature from './DiscoverFeature';
-
-// API Base URL Configuration
-const API_BASE_URL = 'https://lionbay-api.onrender.com/api';
+import { API_BASE_URL } from '../config';
 
 function HomePage() {
   const { isAuthenticated } = useAuth();
   const [featuredProducts, setFeaturedProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    // Apply fade-in animations to elements as they scroll into view
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('animate-in');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1 });
+    
+    document.querySelectorAll('.animate-on-scroll').forEach(item => {
+      observer.observe(item);
+    });
+    
+    return () => {
+      document.querySelectorAll('.animate-on-scroll').forEach(item => {
+        observer.unobserve(item);
+      });
+    };
+  }, []);
 
   useEffect(() => {
     // Fetch featured products (only from admin users, limited to 6)
@@ -56,19 +76,63 @@ function HomePage() {
   return (
     <div className="home-page">
       <div className="hero-section">
-        <h1 style={{ color: 'white' }}>Welcome to LionBay</h1>
-        <p>The marketplace that doesn't make you wait 84 years for your stuff. Get what you need from your neighbors - like, right now. No complicated signup - just your Columbia email and you're good to go!</p>
-        <div className="cta-buttons">
-          <Link to="/market" className="cta-button">Browse Items</Link>
-          <Link to="/create-product" className="cta-button cta-secondary">Sell Something</Link>
+        <div className="hero-content">
+          <h1 className="slide-in-left">Welcome to <span className="highlight">LionBay</span></h1>
+          <p className="slide-in-right">The marketplace built by Columbia students, for Columbia students. Zero commission, zero hassle, and instant connections with your campus community.</p>
+          <div className="cta-buttons fade-in">
+            <Link to="/market" className="cta-button">Browse Items</Link>
+            <Link to="/create-product" className="cta-button cta-secondary">Sell Something</Link>
+          </div>
         </div>
       </div>
 
       {/* Discover Feature Section */}
       <DiscoverFeature />
 
+      {/* How LionBay Works Section */}
+      <section className="how-it-works-section animate-on-scroll">
+        <h2>How LionBay Works</h2>
+        <div className="steps-container">
+          <div className="step-card">
+            <div className="step-icon">
+              <i className="fas fa-user-plus"></i>
+              <div className="step-number">1</div>
+            </div>
+            <h3>Sign Up in Seconds</h3>
+            <p>Just verify your Columbia email - no passwords, no lengthy forms. One click and you're in.</p>
+          </div>
+          <div className="step-connector"></div>
+          <div className="step-card">
+            <div className="step-icon">
+              <i className="fas fa-tag"></i>
+              <div className="step-number">2</div>
+            </div>
+            <h3>List or Browse</h3>
+            <p>Post items you want to sell or browse what others are offering right on campus.</p>
+          </div>
+          <div className="step-connector"></div>
+          <div className="step-card">
+            <div className="step-icon">
+              <i className="fas fa-comments"></i>
+              <div className="step-number">3</div>
+            </div>
+            <h3>Connect & Chat</h3>
+            <p>Message through our secure chat and arrange to meet on campus for exchange.</p>
+          </div>
+          <div className="step-connector"></div>
+          <div className="step-card">
+            <div className="step-icon">
+              <i className="fas fa-handshake"></i>
+              <div className="step-number">4</div>
+            </div>
+            <h3>Quick Transactions</h3>
+            <p>Meet in person, inspect items, and complete your transaction right away.</p>
+          </div>
+        </div>
+      </section>
+
       {/* Featured Products Section */}
-      <section className="featured-products">
+      <section className="featured-products animate-on-scroll">
         <h2>Featured Items</h2>
         {loading ? (
           <div className="loading">Loading featured items...</div>
@@ -104,36 +168,36 @@ function HomePage() {
         )}
       </section>
 
-      <div className="features-section">
-        <h2>Why We're Better Than Those Other Places</h2>
+      <div className="features-section animate-on-scroll">
+        <h2>Why LionBay is Better</h2>
         <div className="features-grid">
           <div className="feature-card">
             <div className="feature-icon"><i className="fas fa-bolt"></i></div>
-            <h3>It's Actually Fast</h3>
-            <p>No waiting for shipping or dealing with mail center chaos. Unlike iBay, no need to pray your package actually arrives before next semester.</p>
+            <h3>Instant Exchanges</h3>
+            <p>Skip the shipping and tracking anxiety. Meet on campus, get what you need immediately, and avoid mail center delays altogether.</p>
           </div>
           <div className="feature-card">
             <div className="feature-icon"><i className="fas fa-money-bill-wave"></i></div>
-            <h3>End of Semester Deals</h3>
-            <p>When people dip for summer break, prices drop faster than GPAs during finals. Score dorm stuff for pennies while Headbook Marketplace still has people asking full price.</p>
+            <h3>Zero Commission</h3>
+            <p>Keep 100% of what you earn. Unlike other marketplaces that take a cut, LionBay is free - built by students, for students.</p>
           </div>
           <div className="feature-card">
-            <div className="feature-icon"><i className="fas fa-comments"></i></div>
-            <h3>No Sketchy Randos</h3>
-            <p>Everyone here has a verified school email. Not like Slide Chat where that "college student" is actually a 45-year-old trying to sell you "slightly used" AirPods.</p>
+            <div className="feature-icon"><i className="fas fa-user-shield"></i></div>
+            <h3>Columbia-Verified Only</h3>
+            <p>Everyone here has a verified Columbia email, creating a trusted community where you know exactly who you're dealing with.</p>
           </div>
           <div className="feature-card">
-            <div className="feature-icon"><i className="fas fa-leaf"></i></div>
-            <h3>Login = Done in 10 Seconds</h3>
-            <p>Just your Columbia email. No password to forget. No account to create. No "please enter a capital letter, 3 numbers, 2 special characters, and your astrological sign" nonsense.</p>
+            <div className="feature-icon"><i className="fas fa-sign-in-alt"></i></div>
+            <h3>Seamless Access</h3>
+            <p>Just your Columbia email. No password to remember, no complex account setup, and no unnecessary personal information required.</p>
           </div>
         </div>
       </div>
 
-      <div className="get-started-section">
-        <h2>Stop Scrolling, Start Saving</h2>
-        <p>Dorm stuff, textbooks, clothes, concert tickets - whatever you need, someone nearby probably has it. Enter your Columbia email, get verified in seconds, and start scoring deals immediately. No account setup headaches, just straight to the good stuff.</p>
-        <Link to="/market" className="cta-button">Find Your Next Score</Link>
+      <div className="get-started-section animate-on-scroll">
+        <h2>Join Your Campus Marketplace</h2>
+        <p>From textbooks and electronics to dorm essentials and concert tickets - connect with fellow Columbia students for hassle-free exchanges. Verify with your email and start exploring campus deals in seconds.</p>
+        <Link to="/market" className="cta-button pulse-animation">Find Campus Deals</Link>
       </div>
     </div>
   );
