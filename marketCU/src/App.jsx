@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Route, Routes, Link, Navigate, useParams, useN
 import './styles/App.css';
 import './App.css';
 import './styles/ProductDetail.css';
+import './styles/MultiImageUpload.css';
 import logo from './assets/lion-logo.svg';
 import axios from 'axios';
 import { io } from 'socket.io-client';
@@ -28,6 +29,23 @@ const PRODUCT_CATEGORIES = [
   "Clothing & Fashion",
   "School Supplies"
 ];
+
+// Helper function to get the first image from a pipe-separated string
+const getFirstImage = (imagePath) => {
+  if (!imagePath) return "/api/placeholder/300/300";
+  
+  // Split by pipe symbol and get the first image URL
+  const images = imagePath.split('|').filter(img => img.trim());
+  return images.length > 0 ? images[0] : imagePath || "/api/placeholder/300/300";
+};
+
+// Helper function to parse image paths with pipe symbols as delimiters
+const parseImagePath = (imagePath) => {
+  if (!imagePath) return "/api/placeholder/300/300";
+  // Split by pipe symbol and get the first image URL
+  const images = imagePath.split('|').filter(img => img.trim());
+  return images.length > 0 ? images[0] : imagePath || "/api/placeholder/300/300";
+};
 
 // Create Auth Context
 const AuthContext = createContext();
@@ -1069,7 +1087,7 @@ function MarketPage() {
                   <Link key={product.id} to={`/market/${product.id}`} className="product-card-link">
                     <div className="product-card">
                       <div className="product-image">
-                        <img src={product.image_path || "/api/placeholder/300/300"} alt={product.name} />
+                        <img src={getFirstImage(product.image_path) || "/api/placeholder/300/300"} alt={product.name} />
                       </div>
                       <div className="product-details">
                         <div className="product-title">{product.name}</div>
@@ -1107,6 +1125,8 @@ function ProductDetailPage() {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('error');
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [productImages, setProductImages] = useState([]);
 
   useEffect(() => {
     const fetchProduct = async () => {
@@ -1114,6 +1134,15 @@ function ProductDetailPage() {
       try {
         const response = await authAxios.get(`/products/${id}`);
         setProduct(response.data);
+        
+        // Parse images from pipe-separated string
+        const images = response.data.image_path ? 
+          response.data.image_path.split('|').filter(img => img.trim()) : 
+          [];
+        
+        setProductImages(images.length > 0 ? images : [response.data.image_path]);
+        setCurrentImageIndex(0);
+        
         // Set document title
         document.title = `${response.data.name} | Lion Bay`;
       } catch (error) {
@@ -1227,6 +1256,20 @@ function ProductDetailPage() {
     }
   };
 
+  const goToNextImage = () => {
+    if (productImages.length <= 1) return;
+    setCurrentImageIndex((prevIndex) => 
+      prevIndex < productImages.length - 1 ? prevIndex + 1 : 0
+    );
+  };
+
+  const goToPreviousImage = () => {
+    if (productImages.length <= 1) return;
+    setCurrentImageIndex((prevIndex) => 
+      prevIndex > 0 ? prevIndex - 1 : productImages.length - 1
+    );
+  };
+
   if (loading) return (
     <div className="product-detail-page">
       <div className="loading">Loading product details...</div>
@@ -1241,6 +1284,8 @@ function ProductDetailPage() {
 
   // Check if current user is the owner of this product
   const isOwner = isAuthenticated && currentUser && currentUser.userId === product.seller_id;
+  const currentImage = productImages[currentImageIndex] || "/api/placeholder/600/400";
+  const hasMultipleImages = productImages.length > 1;
 
   return (
     <div className="product-detail-page">
@@ -1251,11 +1296,41 @@ function ProductDetailPage() {
               <span>Your Listing</span>
             </div>
           )}
+          <div className="product-image-container">
           <img 
-            src={product.image_path || "/api/placeholder/600/400"} 
+              src={currentImage} 
             alt={product.name} 
             className="product-detail-image"
           />
+            
+            {hasMultipleImages && (
+              <div className="product-image-controls">
+                <button 
+                  onClick={goToPreviousImage} 
+                  className="image-nav-button prev"
+                  aria-label="Previous image"
+                >
+                  ‹
+                </button>
+                <div className="image-indicators">
+                  {productImages.map((_, index) => (
+                    <span 
+                      key={index} 
+                      className={`image-indicator ${index === currentImageIndex ? 'active' : ''}`}
+                      onClick={() => setCurrentImageIndex(index)}
+                    />
+                  ))}
+                </div>
+                <button 
+                  onClick={goToNextImage} 
+                  className="image-nav-button next"
+                  aria-label="Next image"
+                >
+                  ›
+                </button>
+              </div>
+            )}
+          </div>
         </div>
         <div className="product-detail-right">
           <h1 className="product-detail-title">{product.name}</h1>
@@ -1333,7 +1408,9 @@ function CreateProductPage() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [imageError, setImageError] = useState('');
-  const [previewImage, setPreviewImage] = useState('');
+  const [previewImages, setPreviewImages] = useState([]);
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadMethod, setUploadMethod] = useState('url'); // 'url' or 'file'
   
   // Toast notification state
@@ -1385,30 +1462,84 @@ function CreateProductPage() {
     }
   };
 
+  const validateMultipleImageUrls = async (urls) => {
+    // Return valid if no URLs provided
+    if (!urls || urls.length === 0) return { valid: true, errors: [] };
+    
+    const errors = [];
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      if (!url) continue; // Skip empty URLs
+      
+      const result = await validateImageUrl(url);
+      if (!result.valid) {
+        errors.push(`Image ${i+1}: ${result.error}`);
+      }
+    }
+    
+    return { valid: errors.length === 0, errors };
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData({
       ...formData,
       [name]: name === 'price' ? (value === '' ? '' : parseFloat(value)) : value
     });
+  };
 
-    // Clear image error when user starts typing new URL
-    if (name === 'image_path') {
-      setImageError('');
-      if (value) {
-        setPreviewImage(value);
-      } else {
-        setPreviewImage('');
-      }
-    }
+  const handleImageUrlChange = (value) => {
+    // Split multiple URLs by newline, comma, or space
+    const urls = value.split(/[\n,\s]+/).filter(url => url.trim());
+    
+    // Limit to max 4 images
+    const limitedUrls = urls.slice(0, 4);
+    
+    // Update preview images
+    setPreviewImages(limitedUrls);
+    
+    // Store joined with double quotes as delimiter
+    setFormData({
+      ...formData,
+      image_path: limitedUrls.join('"')
+    });
+    
+    setImageError('');
   };
 
   const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
+    const files = Array.from(e.target.files);
+    console.log('Files selected:', files.length, files);
+    if (files.length === 0) return;
+    
+    // Check how many more images we can add (max 4 total)
+    const remainingSlots = 4 - previewImages.length;
+    if (remainingSlots <= 0) {
+      setImageError('Maximum 4 images allowed. Please remove some images before adding more.');
+      return;
+    }
+    
+    // Limit to max remaining slots
+    const limitedFiles = files.slice(0, remainingSlots);
+    console.log(`Processing ${limitedFiles.length} new files (${previewImages.length} existing, max 4 total)`);
+    
+    // Don't replace existing files, add to them
+    setSelectedFiles(prev => [...prev, ...limitedFiles]);
+    
+    // Don't clear previous previews, we'll append to them
+    setImageError('');
+    
+    // Track file reading completions
+    let fileReadCount = 0;
+    const tempImagePreviews = new Array(limitedFiles.length);
+    
+    // Process each file
+    limitedFiles.forEach((file, index) => {
+      console.log(`Processing file ${index + 1}/${limitedFiles.length}:`, file.name);
+      
       // Check file type
       if (!file.type.startsWith('image/')) {
-        setImageError('Please upload a valid image file (JPEG, PNG, or GIF)');
+        setImageError('Please upload valid image files (JPEG, PNG, or GIF)');
         return;
       }
 
@@ -1419,29 +1550,83 @@ function CreateProductPage() {
         return;
       }
 
-      // Removed image dimension check to allow phone photos
-
-      // If checks pass, proceed with the upload
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const base64Image = event.target.result;
-          setPreviewImage(base64Image);
-          setFormData({
-            ...formData,
-            image_path: base64Image
-          });
-          setImageError('');
-        };
-      reader.onerror = () => { // Add error handling for reader
+      // Read and add to preview
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        console.log(`File ${index + 1} (${file.name}) loaded successfully`);
+        const base64Image = event.target.result;
+        
+        // Add to temporary array at the correct index
+        tempImagePreviews[index] = base64Image;
+        fileReadCount++;
+        
+        console.log(`File read progress: ${fileReadCount}/${limitedFiles.length}`);
+        
+        // When all files are read, update state once
+        if (fileReadCount === limitedFiles.length) {
+          // Filter out any undefined entries (in case of reading errors)
+          const validNewPreviews = tempImagePreviews.filter(img => img);
+          console.log('New files processed. Valid new previews:', validNewPreviews.length);
+          
+          // Combine existing previews with new ones
+          const updatedPreviews = [...previewImages, ...validNewPreviews];
+          console.log('Updated total previews:', updatedPreviews.length);
+          
+          // Update preview images state
+          setPreviewImages(updatedPreviews);
+          
+          // Update image_path with pipe symbol as delimiter
+          setFormData(prevForm => ({
+            ...prevForm,
+            image_path: updatedPreviews.join('|')
+          }));
+          
+          console.log('Preview images updated. Total:', updatedPreviews.length);
+          console.log('Image path string:', updatedPreviews.join('|'));
+        }
+      };
+      
+      reader.onerror = (error) => {
+        fileReadCount++;
+        console.error(`Error reading file ${file.name}:`, error);
         setImageError('Failed to read image file. Please try again.');
       };
+      
       reader.readAsDataURL(file);
+    });
+  };
+
+  const uploadImages = async () => {
+    if (uploadMethod === 'url') {
+      // URL method: Return the URLs as-is
+      return previewImages;
+    } else {
+      // File method: Use the base64 encoded images
+      return previewImages;
     }
+  };
+
+  const removeImage = (index) => {
+    const updatedPreviews = [...previewImages];
+    updatedPreviews.splice(index, 1);
+    setPreviewImages(updatedPreviews);
+    
+    if (uploadMethod === 'file') {
+      const updatedFiles = [...selectedFiles];
+      updatedFiles.splice(index, 1);
+      setSelectedFiles(updatedFiles);
+    }
+    
+    // Update formData.image_path with double-quote delimiter
+    setFormData({
+      ...formData,
+      image_path: updatedPreviews.join('"')
+    });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Form submission started'); // Add log to track form submission
+    console.log('Form submission started');
     setIsSubmitting(true);
     setImageError('');
 
@@ -1463,20 +1648,32 @@ function CreateProductPage() {
         return;
       }
 
-      // Validate image URL if provided and using URL method
-      if (uploadMethod === 'url' && formData.image_path) {
-        const isValidImage = await validateImageUrl(formData.image_path);
-        if (!isValidImage.valid) {
-          setImageError(isValidImage.error);
-          setIsSubmitting(false);
-          return;
-        }
+      // Validate images
+      const hasImages = previewImages.length > 0;
+      if (!hasImages) {
+        setImageError('Please provide at least one image for your product');
+        setToastMessage('Product image is required');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
       }
 
-      // Check if image is provided
-      if (!formData.image_path) {
-        setImageError('Please provide an image for your product');
-        setToastMessage('Product image is required');
+      // Validate number of images (max 4)
+      if (previewImages.length > 4) {
+        setImageError('Maximum 4 images allowed');
+        setToastMessage('You can upload up to 4 images');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Validate multiple images
+      const imageValidation = await validateMultipleImageUrls(previewImages);
+      if (!imageValidation.valid) {
+        setImageError(imageValidation.errors.join('. '));
+        setToastMessage('One or more images are invalid');
         setToastType('error');
         setShowToast(true);
         setIsSubmitting(false);
@@ -1550,6 +1747,16 @@ function CreateProductPage() {
         return;
       }
 
+      console.log('All validations passed, processing images...');
+      
+      // Process and upload images
+      setUploadProgress(10);
+      const uploadedImages = await uploadImages();
+      setUploadProgress(90);
+      
+      // Join multiple images with double quotes as delimiter
+      const imagePathString = uploadedImages.join('"');
+
       console.log('All validations passed, submitting to API');
       
       // Create product with validated data
@@ -1559,13 +1766,14 @@ function CreateProductPage() {
         condition: formData.condition,
         price: priceValue,
         category: formData.category,
-        image_path: formData.image_path
+        image_path: imagePathString
       };
       
       console.log('Product data to submit:', productData);
       
       const response = await authAxios.post('/products', productData);
       console.log('Product created successfully:', response.data);
+      setUploadProgress(100);
       
       // Show success toast instead of alert
       setToastMessage('Product created successfully!');
@@ -1584,6 +1792,7 @@ function CreateProductPage() {
       setShowToast(true);
     } finally {
       setIsSubmitting(false);
+      setUploadProgress(0);
     }
   };
 
@@ -1689,7 +1898,7 @@ function CreateProductPage() {
           </div>
           
           <div className="form-group">
-            <label>Product Image</label>
+            <label>Product Images (Up to 4)</label>
             
             <div className="upload-options">
               <button 
@@ -1704,19 +1913,20 @@ function CreateProductPage() {
                 className={`upload-option-btn ${uploadMethod === 'file' ? 'active' : ''}`}
                 onClick={() => setUploadMethod('file')}
               >
-                Upload File
+                Upload Files
               </button>
             </div>
             
             {uploadMethod === 'url' ? (
-              <input
-                type="text"
-                id="image_path"
-                name="image_path"
-                value={formData.image_path}
-                onChange={handleChange}
-                placeholder="Enter an image URL"
-              />
+              <div>
+                <textarea
+                  id="image_urls"
+                  placeholder="Enter image URLs (one per line or comma-separated)"
+                  onChange={(e) => handleImageUrlChange(e.target.value)}
+                  rows="3"
+                ></textarea>
+                <small>Enter up to 4 image URLs, separated by line breaks or commas</small>
+              </div>
             ) : (
               <div className="file-upload-container">
                 <input
@@ -1725,22 +1935,38 @@ function CreateProductPage() {
                   accept="image/*"
                   onChange={handleFileUpload}
                   className="file-upload-input"
+                  multiple="multiple"
                 />
                 <label htmlFor="image_file" className="file-upload-label">
-                  Choose a file
+                  Choose files (max 4)
                 </label>
+                <small className="file-upload-help">Hold Ctrl (or Cmd) to select multiple files</small>
               </div>
             )}
             
             {imageError && <div className="error-message">{imageError}</div>}
             
-            {previewImage ? (
-              <div className="image-preview">
-                <img src={previewImage} alt="Product preview" />
+            {uploadProgress > 0 && (
+              <div className="upload-progress">
+                <div className="progress-bar" style={{width: `${uploadProgress}%`}}></div>
+                <span>{uploadProgress}%</span>
               </div>
-            ) : (
-              <div className="image-preview empty">
-                <span>No Image preview available</span>
+            )}
+            
+            {previewImages.length > 0 && (
+              <div className="image-previews-grid">
+                {previewImages.map((image, index) => (
+                  <div key={index} className="image-preview-item">
+                    <img src={image} alt={`Preview ${index + 1}`} />
+                    <button 
+                      type="button" 
+                      className="remove-image-btn"
+                      onClick={() => removeImage(index)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -1749,7 +1975,6 @@ function CreateProductPage() {
             type="submit" 
             className="create-product-button"
             disabled={isSubmitting}
-            onClick={() => console.log('Submit button clicked')}
           >
             {isSubmitting ? 'Creating...' : 'List Item for Sale'}
           </button>
@@ -2058,7 +2283,7 @@ function ChatsListPage() {
                   >
                     <div className="chat-item-image">
                       <img 
-                        src={chat.product_image || '/placeholder-image.jpg'} 
+                        src={parseImagePath(chat.product_image) || '/placeholder-image.jpg'} 
                         alt={chat.product_name} 
                         onError={(e) => {
                           e.target.onerror = null;
@@ -3114,7 +3339,7 @@ function CartPage() {
                     <div key={item.id} className="cart-item">
                       <div className="cart-item-image">
                         <img 
-                          src={item.product_image || "/api/placeholder/150/150"} 
+                          src={parseImagePath(item.product_image) || "/api/placeholder/150/150"} 
                           alt={item.product_name || "Product"} 
                         />
                       </div>
@@ -3152,7 +3377,7 @@ function CartPage() {
                     <div key={item.id} className="cart-item">
                       <div className="cart-item-image">
                         <img 
-                          src={item.product_image || "/api/placeholder/150/150"} 
+                          src={parseImagePath(item.product_image) || "/api/placeholder/150/150"} 
                           alt={item.product_name || "Product"} 
                         />
                       </div>
@@ -3433,59 +3658,92 @@ function ProductManagementPage() {
   };
 
   const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
+    const files = Array.from(e.target.files);
+    console.log('Files selected:', files.length, files);
+    if (files.length === 0) return;
+    
+    // Check how many more images we can add (max 4 total)
+    const remainingSlots = 4 - previewImages.length;
+    if (remainingSlots <= 0) {
+      setImageError('Maximum 4 images allowed. Please remove some images before adding more.');
+      return;
+    }
+    
+    // Limit to max remaining slots
+    const limitedFiles = files.slice(0, remainingSlots);
+    console.log(`Processing ${limitedFiles.length} new files (${previewImages.length} existing, max 4 total)`);
+    
+    // Don't replace existing files, add to them
+    setSelectedFiles(prev => [...prev, ...limitedFiles]);
+    
+    // Don't clear previous previews, we'll append to them
+    setImageError('');
+    
+    // Track file reading completions
+    let fileReadCount = 0;
+    const tempImagePreviews = new Array(limitedFiles.length);
+    
+    // Process each file
+    limitedFiles.forEach((file, index) => {
+      console.log(`Processing file ${index + 1}/${limitedFiles.length}:`, file.name);
+      
       // Check file type
       if (!file.type.startsWith('image/')) {
-        setFormErrors({
-          ...formErrors,
-          images: 'Please upload a valid image file'
-        });
+        setImageError('Please upload valid image files (JPEG, PNG, or GIF)');
         return;
       }
-      
+
       // Check file size (max 5MB)
       const maxSize = 5 * 1024 * 1024; // 5MB in bytes
       if (file.size > maxSize) {
-        setFormErrors({
-          ...formErrors,
-          images: 'Image size must be less than 5MB'
-        });
+        setImageError('Image size must be less than 5MB');
         return;
       }
-      
-      // Removed image dimension check
 
-      // If checks pass, proceed with the upload
+      // Read and add to preview
       const reader = new FileReader();
       reader.onload = (event) => {
+        console.log(`File ${index + 1} (${file.name}) loaded successfully`);
         const base64Image = event.target.result;
         
-        // Update preview image
-        setPreviewImage(base64Image);
+        // Add to temporary array at the correct index
+        tempImagePreviews[index] = base64Image;
+        fileReadCount++;
         
-        // Also update image path for form data
-        setFormData({
-          ...formData,
-          image_path: base64Image
-        });
+        console.log(`File read progress: ${fileReadCount}/${limitedFiles.length}`);
+        
+        // When all files are read, update state once
+        if (fileReadCount === limitedFiles.length) {
+          // Filter out any undefined entries (in case of reading errors)
+          const validNewPreviews = tempImagePreviews.filter(img => img);
+          console.log('New files processed. Valid new previews:', validNewPreviews.length);
+          
+          // Combine existing previews with new ones
+          const updatedPreviews = [...previewImages, ...validNewPreviews];
+          console.log('Updated total previews:', updatedPreviews.length);
+          
+          // Update preview images state
+          setPreviewImages(updatedPreviews);
+          
+          // Update image_path with pipe symbol as delimiter
+          setFormData(prevForm => ({
+            ...prevForm,
+            image_path: updatedPreviews.join('|')
+          }));
+          
+          console.log('Preview images updated. Total:', updatedPreviews.length);
+          console.log('Image path string:', updatedPreviews.join('|'));
+        }
       };
-      reader.onerror = () => { // Add error handling for reader
-        setFormErrors({
-          ...formErrors,
-          images: 'Failed to read image file. Please try again.'
-        });
-      };
-      reader.readAsDataURL(file);
       
-      // Clear error when image is updated
-      if (formErrors.images) {
-        setFormErrors({
-          ...formErrors,
-          images: null
-        });
-      }
-    }
+      reader.onerror = (error) => {
+        fileReadCount++;
+        console.error(`Error reading file ${file.name}:`, error);
+        setImageError('Failed to read image file. Please try again.');
+      };
+      
+      reader.readAsDataURL(file);
+    });
   };
 
   const handleEditProduct = (product) => {
@@ -3862,7 +4120,7 @@ function ProductManagementPage() {
                 <div key={product.id} className="product-management-item">
                   <div className="product-management-image">
                     <img 
-                      src={product.image_path || "/api/placeholder/150/150"} 
+                      src={parseImagePath(product.image_path) || "/api/placeholder/150/150"} 
                       alt={product.name} 
                     />
                   </div>
