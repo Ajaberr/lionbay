@@ -1498,10 +1498,10 @@ function CreateProductPage() {
     // Update preview images
     setPreviewImages(limitedUrls);
     
-    // Store joined with double quotes as delimiter
+    // Store joined with bar as delimiter
     setFormData({
       ...formData,
-      image_path: limitedUrls.join('"')
+      image_path: limitedUrls.join('|')
     });
     
     setImageError('');
@@ -1575,7 +1575,7 @@ function CreateProductPage() {
           // Update preview images state
           setPreviewImages(updatedPreviews);
           
-          // Update image_path with pipe symbol as delimiter
+          // Update image_path with pipe delimiter
           setFormData(prevForm => ({
             ...prevForm,
             image_path: updatedPreviews.join('|')
@@ -1617,10 +1617,10 @@ function CreateProductPage() {
       setSelectedFiles(updatedFiles);
     }
     
-    // Update formData.image_path with double-quote delimiter
+    // Update formData.image_path with pipe delimiter
     setFormData({
       ...formData,
-      image_path: updatedPreviews.join('"')
+      image_path: updatedPreviews.join('|')
     });
   };
 
@@ -1754,8 +1754,8 @@ function CreateProductPage() {
       const uploadedImages = await uploadImages();
       setUploadProgress(90);
       
-      // Join multiple images with double quotes as delimiter
-      const imagePathString = uploadedImages.join('"');
+      // Join multiple images with pipe symbol as delimiter
+      const imagePathString = uploadedImages.join('|');
 
       console.log('All validations passed, submitting to API');
       
@@ -3454,6 +3454,7 @@ function ProductManagementPage() {
   const [imageFile, setImageFile] = useState(null);
   const [previewImage, setPreviewImage] = useState('');
   const [uploadMethod, setUploadMethod] = useState('file');
+  const [previewImages, setPreviewImages] = useState([]);
 
   const categories = [
     'Laptops & Accessories',
@@ -3594,13 +3595,16 @@ function ProductManagementPage() {
     }
 
     // Image validation
-    if (!formData.image_path) {
+    if (previewImages.length === 0) {
       errors.images = "At least one product image is required";
+      hasError = true;
+    } else if (previewImages.length > 4) {
+      errors.images = "Maximum 4 images allowed";
       hasError = true;
     } else {
       // Validate image URLs if using URL method
       if (uploadMethod === 'url') {
-        const invalidUrls = [formData.image_path].filter(url => url && !url.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i));
+        const invalidUrls = previewImages.filter(url => url && !url.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i));
         if (invalidUrls.length > 0) {
           errors.images = "Please provide valid image URLs (jpg, jpeg, png, gif, or webp)";
           hasError = true;
@@ -3638,15 +3642,20 @@ function ProductManagementPage() {
   };
 
   const handleImageUrlChange = (value) => {
+    // Split multiple URLs by newline, comma, or space
+    const urls = value.split(/[\n,\s]+/).filter(url => url.trim());
+    
+    // Limit to max 4 images
+    const limitedUrls = urls.slice(0, 4);
+    
+    // Update preview images
+    setPreviewImages(limitedUrls);
+    
+    // Store joined with bar as delimiter
     setFormData({
       ...formData,
-      image_path: value
+      image_path: limitedUrls.join('|')
     });
-    
-    // Update preview for URL method
-    if (uploadMethod === 'url') {
-      setPreviewImage(value);
-    }
     
     // Clear error when image is updated
     if (formErrors.images) {
@@ -3665,7 +3674,10 @@ function ProductManagementPage() {
     // Check how many more images we can add (max 4 total)
     const remainingSlots = 4 - previewImages.length;
     if (remainingSlots <= 0) {
-      setImageError('Maximum 4 images allowed. Please remove some images before adding more.');
+      setFormErrors({
+        ...formErrors,
+        images: 'Maximum 4 images allowed. Please remove some images before adding more.'
+      });
       return;
     }
     
@@ -3673,73 +3685,62 @@ function ProductManagementPage() {
     const limitedFiles = files.slice(0, remainingSlots);
     console.log(`Processing ${limitedFiles.length} new files (${previewImages.length} existing, max 4 total)`);
     
-    // Don't replace existing files, add to them
-    setSelectedFiles(prev => [...prev, ...limitedFiles]);
-    
-    // Don't clear previous previews, we'll append to them
-    setImageError('');
-    
-    // Track file reading completions
-    let fileReadCount = 0;
-    const tempImagePreviews = new Array(limitedFiles.length);
+    // Set currently selected file for UI display
+    if (limitedFiles.length === 1) {
+      setImageFile(limitedFiles[0]);
+    } else if (limitedFiles.length > 1) {
+      setImageFile({ name: `${limitedFiles.length} files selected` });
+    }
     
     // Process each file
-    limitedFiles.forEach((file, index) => {
-      console.log(`Processing file ${index + 1}/${limitedFiles.length}:`, file.name);
-      
+    let processedImages = 0;
+    const newImages = [];
+    
+    limitedFiles.forEach(file => {
       // Check file type
       if (!file.type.startsWith('image/')) {
-        setImageError('Please upload valid image files (JPEG, PNG, or GIF)');
+        setFormErrors({
+          ...formErrors,
+          images: 'Please upload valid image files (JPEG, PNG, or GIF)'
+        });
         return;
       }
 
       // Check file size (max 5MB)
       const maxSize = 5 * 1024 * 1024; // 5MB in bytes
       if (file.size > maxSize) {
-        setImageError('Image size must be less than 5MB');
+        setFormErrors({
+          ...formErrors,
+          images: 'Image size must be less than 5MB'
+        });
         return;
       }
 
-      // Read and add to preview
+      // Read file as data URL
       const reader = new FileReader();
       reader.onload = (event) => {
-        console.log(`File ${index + 1} (${file.name}) loaded successfully`);
-        const base64Image = event.target.result;
+        newImages.push(event.target.result);
+        processedImages++;
         
-        // Add to temporary array at the correct index
-        tempImagePreviews[index] = base64Image;
-        fileReadCount++;
-        
-        console.log(`File read progress: ${fileReadCount}/${limitedFiles.length}`);
-        
-        // When all files are read, update state once
-        if (fileReadCount === limitedFiles.length) {
-          // Filter out any undefined entries (in case of reading errors)
-          const validNewPreviews = tempImagePreviews.filter(img => img);
-          console.log('New files processed. Valid new previews:', validNewPreviews.length);
+        // When all files are processed, update state
+        if (processedImages === limitedFiles.length) {
+          const updatedImages = [...previewImages, ...newImages];
+          setPreviewImages(updatedImages);
           
-          // Combine existing previews with new ones
-          const updatedPreviews = [...previewImages, ...validNewPreviews];
-          console.log('Updated total previews:', updatedPreviews.length);
-          
-          // Update preview images state
-          setPreviewImages(updatedPreviews);
-          
-          // Update image_path with pipe symbol as delimiter
-          setFormData(prevForm => ({
-            ...prevForm,
-            image_path: updatedPreviews.join('|')
-          }));
-          
-          console.log('Preview images updated. Total:', updatedPreviews.length);
-          console.log('Image path string:', updatedPreviews.join('|'));
+          // Update image_path with pipe delimiter
+          setFormData({
+            ...formData,
+            image_path: updatedImages.join('|')
+          });
         }
       };
       
-      reader.onerror = (error) => {
-        fileReadCount++;
-        console.error(`Error reading file ${file.name}:`, error);
-        setImageError('Failed to read image file. Please try again.');
+      reader.onerror = () => {
+        processedImages++;
+        setFormErrors({
+          ...formErrors,
+          images: 'Failed to read image file. Please try again.'
+        });
       };
       
       reader.readAsDataURL(file);
@@ -3748,6 +3749,8 @@ function ProductManagementPage() {
 
   const handleEditProduct = (product) => {
     setSelectedProduct(product);
+    
+    // Initialize form data
     setFormData({
       name: product.name,
       details: product.details,
@@ -3758,8 +3761,15 @@ function ProductManagementPage() {
       other_category: product.category === 'Other' ? product.custom_category || '' : ''
     });
     
-    // Reset preview
-    setPreviewImage(product.image_path);
+    // Parse multiple images if they exist
+    if (product.image_path && product.image_path.includes('|')) {
+      const images = product.image_path.split('|').filter(img => img.trim());
+      setPreviewImages(images);
+    } else {
+      // Single image case
+      setPreviewImages(product.image_path ? [product.image_path] : []);
+    }
+    
     setImageFile(null);
     setFormErrors({});
     setShowEditForm(true);
@@ -3777,7 +3787,7 @@ function ProductManagementPage() {
       image_path: '',
       other_category: ''
     });
-    setPreviewImage('');
+    setPreviewImages([]);
     setImageFile(null);
     setFormErrors({});
     setShowAddForm(true);
@@ -4054,12 +4064,12 @@ function ProductManagementPage() {
                 
                 <div className="product-image-container">
                   {uploadMethod === 'url' ? (
-                    <input
-                      type="text"
-                      placeholder="Image URL"
-                      value={formData.image_path || ''}
+                    <textarea
+                      placeholder="Enter image URLs (one per line or comma-separated, max 4)"
+                      value={previewImages.join('\n')}
                       onChange={(e) => handleImageUrlChange(e.target.value)}
                       className={formErrors.images ? 'error-border' : ''}
+                      rows="3"
                     />
                   ) : (
                     <div className="file-upload-container">
@@ -4069,18 +4079,40 @@ function ProductManagementPage() {
                         accept="image/*"
                         onChange={handleFileUpload}
                         className="file-upload-input"
+                        multiple
                       />
                       <label htmlFor="image_file" className={`file-upload-label ${formErrors.images ? 'error-border' : ''}`}>
-                        {imageFile ? imageFile.name : 'Choose image'}
+                        {imageFile ? imageFile.name : 'Choose images (max 4)'}
                       </label>
                     </div>
                   )}
                   
-                  {previewImage ? (
-                    <div className="image-preview">
-                      <img src={previewImage} alt="Product preview" />
+                  {previewImages.length > 0 && (
+                    <div className="image-previews-grid">
+                      {previewImages.map((image, index) => (
+                        <div key={index} className="image-preview-item">
+                          <img src={image} alt={`Product preview ${index + 1}`} />
+                          <button 
+                            type="button" 
+                            className="remove-image-btn"
+                            onClick={() => {
+                              const updatedPreviews = [...previewImages];
+                              updatedPreviews.splice(index, 1);
+                              setPreviewImages(updatedPreviews);
+                              setFormData({
+                                ...formData,
+                                image_path: updatedPreviews.join('|')
+                              });
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  ) : (
+                  )}
+                  
+                  {previewImages.length === 0 && (
                     <div className="image-preview empty">
                       <span>No preview</span>
                     </div>
