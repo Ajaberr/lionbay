@@ -669,6 +669,8 @@ function SignInPage() {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('success');
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
 
   // Redirect if already logged in
   useEffect(() => {
@@ -687,6 +689,11 @@ function SignInPage() {
 
   const handleSendCode = async (e) => {
     e.preventDefault();
+    
+    if (!termsAccepted) {
+      setError('You must agree to the Terms of Service to continue');
+      return;
+    }
     
     setLoading(true);
     setError(null);
@@ -729,7 +736,8 @@ function SignInPage() {
       const userData = {
         userId: response.data.user.id,
         email: email,
-        isAdmin: isAdmin || response.data.user.isAdmin
+        isAdmin: isAdmin || response.data.user.isAdmin,
+        termsAccepted: true
       };
       
       console.log('User authenticated:', userData);
@@ -776,6 +784,59 @@ function SignInPage() {
                 />
               </div>
 
+              <div className="checkbox-field">
+                <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    id="termsAccepted"
+                    checked={termsAccepted}
+                    onChange={(e) => setTermsAccepted(e.target.checked)}
+                    className="checkbox-input"
+                    style={{
+                      width: "24px",
+                      height: "24px",
+                      border: "2px solid #1c4587",
+                      borderRadius: "4px",
+                      appearance: "none",
+                      WebkitAppearance: "none",
+                      MozAppearance: "none",
+                      backgroundColor: "white",
+                      position: "relative",
+                      cursor: "pointer",
+                      marginRight: "12px",
+                      display: "inline-block",
+                      verticalAlign: "middle"
+                    }}
+                  />
+                  {termsAccepted && (
+                    <div style={{
+                      position: "absolute",
+                      left: "1px",
+                      top: "2px",
+                      color: "#1c4587",
+                      fontSize: "26px",
+                      fontWeight: "bold",
+                      pointerEvents: "none",
+                      lineHeight: "22px",
+                      textAlign: "center",
+                      fontFamily: "Arial, sans-serif",
+                      width: "24px"
+                    }}>✓</div>
+                  )}
+                  <label htmlFor="termsAccepted" className="checkbox-label" style={{ cursor: "pointer" }}>
+                    I agree to the LionBay <span 
+                      className="details-link" 
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setShowTermsModal(true);
+                      }}
+                    >
+                      Terms of Service
+                    </span>
+                  </label>
+                </div>
+              </div>
+
               <div className="captcha-container">
                 <div className="captcha-box">
                   <div className="captcha-info">
@@ -786,7 +847,11 @@ function SignInPage() {
               </div>
 
               <div className="form-actions">
-                <button type="submit" className="sign-in-button" disabled={loading}>
+                <button 
+                  type="submit" 
+                  className="sign-in-button" 
+                  disabled={loading || !termsAccepted}
+                >
                   {loading ? 'Sending...' : 'Send Verification Code'}
                 </button>
               </div>
@@ -848,6 +913,97 @@ function SignInPage() {
           type={toastType}
           onClose={() => setShowToast(false)}
         />
+      )}
+      
+      {showTermsModal && (
+        <div className="modal-overlay" onClick={() => setShowTermsModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px', maxHeight: '80vh', overflow: 'auto' }}>
+            <h3>LionBay Terms of Service</h3>
+            <div style={{ marginBottom: '20px', fontSize: '0.9rem', lineHeight: '1.5' }}>
+              <p><strong>Last Updated: May 7, 2025</strong></p>
+              
+              <p>Welcome to LionBay, a marketplace exclusively for Columbia University students, faculty, and staff. By using our platform, you agree to these Terms of Service.</p>
+              
+              <h4 style={{ marginTop: '15px' }}>1. Eligibility</h4>
+              <p>Use of LionBay is limited to Columbia University students, faculty, and staff with valid Columbia email addresses.</p>
+              
+              <h4 style={{ marginTop: '15px' }}>2. Account Registration</h4>
+              <p>To use LionBay, you must register using your Columbia University email address. You are responsible for maintaining the confidentiality of your account information and for all activities under your account.</p>
+              
+              <h4 style={{ marginTop: '15px' }}>3. User Conduct</h4>
+              <p>When using LionBay, you agree to:</p>
+              <ul>
+                <li>Provide accurate information about yourself and the items you list</li>
+                <li>Only list items that you legally own and have the right to sell</li>
+                <li>Not list prohibited items (see Prohibited Items section below)</li>
+                <li>Not engage in fraudulent activities or misrepresent items being sold</li>
+                <li>Communicate respectfully with other users</li>
+                <li>Complete transactions as agreed upon with other users</li>
+                <li>Comply with all applicable laws and regulations</li>
+              </ul>
+              
+              <h4 style={{ marginTop: '15px' }}>4. Prohibited Items</h4>
+              <p>The following items may not be listed on LionBay:</p>
+              <ul>
+                <li>Illegal items or services</li>
+                <li>Weapons, explosives, and related items</li>
+                <li>Drugs, controlled substances, and drug paraphernalia</li>
+                <li>Alcohol and tobacco products</li>
+                <li>Counterfeit or stolen items</li>
+                <li>Items that infringe upon intellectual property rights</li>
+                <li>Hazardous or dangerous materials</li>
+                <li>Human remains or body parts</li>
+                <li>Live animals</li>
+                <li>Adult content or services</li>
+                <li>Items or services that promote hate speech or discrimination</li>
+              </ul>
+              
+              <h4 style={{ marginTop: '15px' }}>5. Transaction Safety</h4>
+              <p>LionBay recommends the following safety practices:</p>
+              <ul>
+                <li>Meet in public, well-lit places on or near campus for exchanges</li>
+                <li>Bring a friend when meeting someone for the first time</li>
+                <li>Inspect items before completing the purchase</li>
+                <li>Use caution when sharing personal information</li>
+              </ul>
+              
+              <h4 style={{ marginTop: '15px' }}>6. Fees</h4>
+              <p>LionBay is currently a free service with no listing or transaction fees. We reserve the right to introduce fees in the future with appropriate notice to users.</p>
+              
+              <h4 style={{ marginTop: '15px' }}>7. Privacy</h4>
+              <p>Your privacy is important to us. Please review our Privacy Policy to understand how we collect, use, and protect your information.</p>
+              
+              <h4 style={{ marginTop: '15px' }}>8. Content Ownership</h4>
+              <p>You retain ownership of content you post on LionBay, but grant us a license to use, modify, and display that content for the purpose of operating the platform.</p>
+              
+              <h4 style={{ marginTop: '15px' }}>9. Termination</h4>
+              <p>We reserve the right to suspend or terminate your access to LionBay if you violate these Terms of Service or engage in behavior that poses a risk to the community.</p>
+              
+              <h4 style={{ marginTop: '15px' }}>10. Disclaimer of Warranties</h4>
+              <p>LionBay is provided "as is" without warranties of any kind, either express or implied. We do not guarantee the accuracy, quality, or reliability of any items, users, or content on the platform.</p>
+              
+              <h4 style={{ marginTop: '15px' }}>11. Limitation of Liability</h4>
+              <p>LionBay is not liable for any direct, indirect, incidental, special, consequential, or punitive damages resulting from your use of or inability to use the platform.</p>
+              
+              <h4 style={{ marginTop: '15px' }}>12. Dispute Resolution</h4>
+              <p>Any disputes arising from the use of LionBay should first be addressed between the involved users. For unresolved issues, contact our support team.</p>
+              
+              <h4 style={{ marginTop: '15px' }}>13. Changes to Terms</h4>
+              <p>We may modify these Terms of Service at any time. Continued use of LionBay after changes constitutes acceptance of the updated terms.</p>
+              
+              <h4 style={{ marginTop: '15px' }}>14. Contact Information</h4>
+              <p>For questions or concerns regarding these Terms of Service, please contact support from toggle at the bottom of the screen.</p>
+            </div>
+            <div className="modal-actions">
+              <button 
+                className="modal-btn cancel" 
+                onClick={() => setShowTermsModal(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1123,12 +1279,15 @@ function ProductDetailPage() {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [cartItems, setCartItems] = useState([]); // <-- Add state for cart items
+  const [cartLoading, setCartLoading] = useState(true); // <-- Add loading state for cart
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [toastType, setToastType] = useState('error');
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [productImages, setProductImages] = useState([]);
 
+  // Fetch product details
   useEffect(() => {
     const fetchProduct = async () => {
       setLoading(true);
@@ -1146,6 +1305,10 @@ function ProductDetailPage() {
         
         // Set document title
         document.title = `${response.data.name} | Lion Bay`;
+
+        // Scroll to top when product data is loaded
+        window.scrollTo(0, 0);
+
       } catch (error) {
         console.error('Error fetching product details:', error);
         setError('Failed to load product details');
@@ -1156,6 +1319,30 @@ function ProductDetailPage() {
 
     fetchProduct();
   }, [id, authAxios]);
+
+  // Function to fetch/refetch cart items
+  const fetchCartItems = async () => {
+    if (!isAuthenticated) {
+        setCartItems([]);
+        setCartLoading(false);
+        return;
+    }
+    setCartLoading(true);
+    try {
+      const response = await authAxios.get('/cart');
+      setCartItems(response.data || []);
+    } catch (err) {
+      console.error('Error fetching/refetching cart items:', err);
+      setCartItems([]); // Reset on error
+    } finally {
+      setCartLoading(false);
+    }
+  };
+
+  // Effect to fetch initial cart items
+  useEffect(() => {
+    fetchCartItems();
+  }, [isAuthenticated, authAxios]); // Run when auth status changes
 
   const handleContactSeller = async () => {
     if (!isAuthenticated) {
@@ -1193,6 +1380,7 @@ function ProductDetailPage() {
       if (updateCartCount) {
         updateCartCount();
       }
+      fetchCartItems(); // <-- Refetch cart items
       
       // Show success toast
       setToastMessage("Seller contacted successfully.");
@@ -1244,6 +1432,7 @@ function ProductDetailPage() {
       if (updateCartCount) {
         updateCartCount();
       }
+      fetchCartItems(); // <-- Refetch cart items
       
       // Show success toast
       setToastMessage("Product added to cart.");
@@ -1271,7 +1460,8 @@ function ProductDetailPage() {
     );
   };
 
-  if (loading) return (
+  // Update loading check
+  if (loading || cartLoading) return ( 
     <div className="product-detail-page">
       <div className="loading">Loading product details...</div>
     </div>
@@ -1287,6 +1477,9 @@ function ProductDetailPage() {
   const isOwner = isAuthenticated && currentUser && currentUser.userId === product.seller_id;
   const currentImage = productImages[currentImageIndex] || "/api/placeholder/600/400";
   const hasMultipleImages = productImages.length > 1;
+
+  // Check if current product is in the cart
+  const isProductInCart = product && cartItems.some(item => item.product_id === product.id);
 
   return (
     <div className="product-detail-page">
@@ -1374,12 +1567,18 @@ function ProductDetailPage() {
               >
               Contact Seller
             </button>
-              <button 
-                onClick={() => protectedAction(handleAddToCart)} 
-                className="add-to-cart-button"
-              >
-                Add to Cart
-              </button>
+              {isProductInCart ? (
+                <button className="add-to-cart-button disabled" disabled>
+                  Already in Cart
+                </button>
+              ) : (
+                <button 
+                  onClick={() => protectedAction(handleAddToCart)} 
+                  className="add-to-cart-button"
+                >
+                  Add to Cart
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -2043,9 +2242,9 @@ function ChatsListPage() {
 
   // Initialize socket connection
   useEffect(() => {
-    if (!isAuthenticated) {
-      return;
-    }
+      if (!isAuthenticated) {
+        return;
+      }
 
     const token = localStorage.getItem('token');
     const newSocket = io(SOCKET_URL, {
@@ -2081,21 +2280,57 @@ function ChatsListPage() {
   useEffect(() => {
     if (!socketRef.current || !currentUser?.userId) return;
 
-    const updateChatWithNewMessage = (message) => {
+    const updateChatWithNewMessage = async (message) => { // Made async
       if (!message || !message.chat_id) return;
       if (currentUser?.userId && message.sender_id === currentUser.userId && !message.is_system_message) {
         return; // Ignore self-sent non-system messages
       }
-      setChats(prevChats => 
-        prevChats.map(c => 
-          c.id === message.chat_id ? { 
-            ...c, 
-            last_message: message.content, 
-            last_message_at: message.created_at, 
-            // Potentially update unread count if logic exists for it here based on system messages too
-          } : c
-        )
-      );
+      
+      setChats(prevChats => {
+        const existingChatIndex = prevChats.findIndex(c => c.id === message.chat_id);
+        
+        if (existingChatIndex !== -1) {
+          // Chat exists, update it and move to top
+          const updatedChat = {
+            ...prevChats[existingChatIndex],
+            last_message: message.content,
+            last_message_at: message.created_at,
+            // Optionally update unread status based on message sender
+            unread_count: (message.sender_id !== currentUser.userId) ? (prevChats[existingChatIndex].unread_count || 0) + 1 : prevChats[existingChatIndex].unread_count
+          };
+          // Remove from current position and add to the beginning
+          const filteredChats = prevChats.filter(c => c.id !== message.chat_id);
+          return [updatedChat, ...filteredChats];
+        } else {
+          // Chat doesn't exist, need to fetch it (handle fetch outside setState)
+          // We return the previous state here and trigger fetch below
+          return prevChats; 
+        }
+      });
+
+      // If chat didn't exist, fetch it and add it
+      const chatExists = chats.some(c => c.id === message.chat_id);
+      if (!chatExists) {
+        console.log(`New message for unknown chat ${message.chat_id}. Fetching chat details...`);
+        try {
+          const response = await authAxios.get(`/chats/${message.chat_id}`);
+          const newChatData = response.data;
+          if (newChatData) {
+            // Add the newly fetched chat to the beginning of the list
+            setChats(prevChats => [
+              { // Ensure the new chat data includes the latest message details
+                ...newChatData,
+                last_message: message.content,
+                last_message_at: message.created_at,
+                unread_count: (message.sender_id !== currentUser.userId) ? 1 : 0
+              },
+              ...prevChats
+            ]);
+          }
+        } catch (err) {
+          console.error(`Error fetching new chat details for chat ${message.chat_id}:`, err);
+        }
+      }
     };
 
     const handleChatDeleted = ({ chatId }) => {
@@ -2408,7 +2643,7 @@ function ChatsListPage() {
           <div className="modal-overlay">
             <div className="modal-content">
               <h3>Cancel Deal</h3>
-              <p>{modalText}</p>
+              <p>This will delete the chat and end the deal for both sides. The product will remain listed. This can't be undone.</p>
               <div className="modal-actions">
                 <button 
                   className="modal-btn cancel" 
@@ -2436,7 +2671,7 @@ function ChatsListPage() {
             <h3>Complete Payment</h3>
             <p>{currentUser?.userId === chats.find(c => c.id === chatToComplete)?.seller_id 
               ? "Confirm that you've received payment from the buyer in person. This will mark the deal as complete and remove the item from the marketplace." 
-              : "Confirm that you've made the payment to the seller in person. This will notify the seller to complete the deal."}</p>
+              : "Please confirm that you have paid the seller the full agreed amount (e.g., via Zelle, Venmo, cash, etc.). Clicking 'Complete Payment' testifies that you have completed your payment."}</p>
             <div className="modal-actions">
               <button 
                 className="modal-btn cancel" 
@@ -2937,18 +3172,18 @@ function ChatPage() {
               </span>
             </div>
             <button 
-              className="complete-payment-button" 
+              className="todo-button complete-button" // Updated class
               onClick={() => setShowCompleteConfirm(true)}
-              disabled={completeDealButtonDisabled} // Updated disabled logic
+              disabled={completeDealButtonDisabled} 
             >
-              Complete Deal
+              Complete {/* Updated label */}
             </button>
             <button 
-              className="delete-chat-button" 
+              className="todo-button delete-button" // Updated class
               onClick={() => setShowDeleteConfirm(true)}
               disabled={deleting}
             >
-              <i className="fas fa-trash"></i>
+              Cancel {/* Updated label and changed from icon */}
             </button>
           </div>
         </div>
@@ -3019,36 +3254,51 @@ function ChatPage() {
         />
       )}
       
-      {showDeleteConfirm && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h3>Delete Chat</h3>
-            <p>This will delete the chat and remove the item from your cart. This cannot be undone.</p>
-            <div className="modal-actions">
-              <button 
-                className="modal-btn cancel" 
-                onClick={() => setShowDeleteConfirm(false)}
-                disabled={deleting}
-              >
-                Cancel
-              </button>
-              <button 
-                className="modal-btn delete" 
-                onClick={handleDeleteChat}
-                disabled={deleting}
-              >
-                {deleting ? 'Deleting...' : 'Delete'}
-              </button>
+      {showDeleteConfirm && (() => {
+        let modalText = "This will cancel the deal and delete the chat. This cannot be undone."; // Default
+        // Determine current user's role in the specific chat (chat object should be in ChatPage's scope)
+        if (chat && currentUser) { 
+            if (isCurrentUserSeller) { // isCurrentUserSeller should be available in ChatPage
+                modalText = "This will cancel the deal, delete the chat, and may affect the buyer\'s cart if the item was added from this chat. This cannot be undone.";
+            } else if (isCurrentUserBuyer) { // isCurrentUserBuyer should be available in ChatPage
+                modalText = "This will cancel the deal, delete the chat, and remove the item from your cart (if added via this chat). This cannot be undone.";
+            }
+        }
+        return (
+          <div className="modal-overlay">
+            <div className="modal-content">
+              <h3>Cancel Deal</h3> {/* Ensure title is Cancel Deal */}
+              <p>{modalText}</p> {/* Use the dynamic modalText */}
+              <div className="modal-actions">
+                <button 
+                  className="modal-btn cancel" 
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={deleting}
+                >
+                  Keep Chat
+                </button>
+                <button 
+                  className="modal-btn delete" 
+                  onClick={handleDeleteChat} // This should be the existing delete handler for ChatPage
+                  disabled={deleting}
+                >
+                  {deleting ? 'Cancelling...' : 'Yes, Cancel Deal'} {/* Button text from ChatsListPage */}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
       
       {showCompleteConfirm && (
         <div className="modal-overlay">
           <div className="modal-content">
             <h3>Complete Payment</h3>
-            <p>Mark this transaction as paid in person? This action cannot be undone.</p>
+            {/* Updated dynamic text based on isCurrentUserSeller from ChatPage scope */}
+            <p>{isCurrentUserSeller 
+              ? "Confirm that you\'ve received payment from the buyer in person. This will mark the deal as complete and remove the item from the marketplace." 
+              : "Please confirm that you have paid the seller the full agreed amount (e.g., via Zelle, Venmo, cash, etc.). Clicking 'Complete Payment' testifies that you have completed your payment."
+            }</p>
             <div className="modal-actions">
               <button 
                 className="modal-btn cancel" 
@@ -3059,7 +3309,7 @@ function ChatPage() {
               </button>
               <button 
                 className="modal-btn complete" 
-                onClick={handleCompletePayment}
+                onClick={handleCompletePayment} // This is the existing complete handler for ChatPage
                 disabled={completing}
               >
                 {completing ? 'Processing...' : 'Complete Payment'}
@@ -3297,7 +3547,7 @@ function CartPage() {
         setLoading(true);
         if (isAuthenticated) {
           console.log('Fetching cart items for user');
-          const response = await authAxios.get('/cart');
+        const response = await authAxios.get('/cart');
           console.log('Cart items received:', response.data);
           setCartItems(response.data);
         } else {
@@ -3479,7 +3729,7 @@ function CartPage() {
                             onClick={() => protectedAction(() => handleContactSeller(item.product_id, item.seller_id))}
                             className="contact-seller-button"
                           >
-                            Contact Seller
+                            Start Chat
                           </button>
                           <button 
                             onClick={() => protectedAction(() => handleRemoveFromCart(item.id))}

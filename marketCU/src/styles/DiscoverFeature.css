@@ -1,6 +1,6 @@
 .discover-feature-section {
   background: linear-gradient(to right, #f9fafc, #eef1f8);
-  padding: 60px 0;
+  padding: 60px 20px;
   margin: 40px 0;
   border-radius: 16px;
   overflow: hidden;
@@ -41,9 +41,17 @@
 }
 
 .discover-feature-text p {
-  font-size: 1.2rem;
-  line-height: 1.6;
-  color: #555;
+  font-size: 1.1rem;
+  line-height: 1.7;
+  color: var(--text-color);
+  margin-bottom: 15px;
+}
+
+.discover-feature-text p + p {
+  margin-top: -5px;
+}
+
+.discover-feature-text p:last-of-type {
   margin-bottom: 30px;
 }
 

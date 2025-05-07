@@ -10,6 +10,30 @@ function HomePage() {
   const { isAuthenticated } = useAuth();
   const [featuredProducts, setFeaturedProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [openFaqIndex, setOpenFaqIndex] = useState(null); // State for accordion
+
+  const faqsData = [
+    {
+      q: "Who can use LionBay?",
+      a: "Only verified Columbia University students can post, buy, and message. It's 100% campus-only."
+    },
+    {
+      q: "Does LionBay take any commission?",
+      a: "Nope. Zero fees. You keep every dollar of what you sell."
+    },
+    {
+      q: "How do I pay or get paid?",
+      a: "You can use Zelle, Apple Pay, cash, or Stripe — it's up to you and the other person."
+    },
+    {
+      q: "Is it safe?",
+      a: "Yes — LionBay is closed to verified Columbia students only. No randoms."
+    },
+    {
+      q: "Can I meet in person?",
+      a: "Totally. Most students meet on campus spots like Butler, Lerner, or dorm lobbies."
+    }
+  ];
   
   // Helper function to get the first image from a pipe-delimited string
   const getFirstImage = (imagePath) => {
@@ -132,7 +156,7 @@ function HomePage() {
               <div className="step-number">4</div>
             </div>
             <h3>Quick Transactions</h3>
-            <p>Meet in person, exchange items & payment. Buyer confirms, seller verifies. Like rideshare apps!</p>
+            <p>Meet in person, exchange items & payment (e.g., Venmo, Zelle, cash directly to the seller). Buyer confirms, seller verifies. Like rideshare apps!</p>
           </div>
         </div>
       </section>
@@ -197,6 +221,16 @@ function HomePage() {
             <h3>Seamless Access</h3>
             <p>Just your Columbia email. No password to remember, no complex account setup, and no unnecessary personal information required.</p>
           </div>
+          <div className="feature-card">
+            <div className="feature-icon"><i className="fas fa-walking"></i></div>
+            <h3>Ultra-Convenient</h3>
+            <p>Everything is right here on campus. No need to travel far—find what you need within a short walk from your dorm or class.</p>
+          </div>
+          <div className="feature-card">
+            <div className="feature-icon"><i className="fas fa-recycle"></i></div>
+            <h3>Sustainable & Smart</h3>
+            <p>Reduce waste by buying and selling pre-loved items within the community. It's good for your wallet and the planet.</p>
+          </div>
         </div>
       </div>
 
@@ -205,6 +239,35 @@ function HomePage() {
         <p>From textbooks and electronics to dorm essentials and concert tickets - connect with fellow Columbia students for hassle-free exchanges. Verify with your email and start exploring campus deals in seconds.</p>
         <Link to="/market" className="cta-button pulse-animation">Find Campus Deals</Link>
       </div>
+
+      {/* FAQs Section */}
+      <section className="faqs-section animate-on-scroll">
+        <h2>Frequently Asked Questions</h2>
+        <div className="faqs-container">
+          {faqsData.map((faq, index) => (
+            <div key={index} className="faq-item">
+              <button
+                className={`faq-question ${openFaqIndex === index ? 'open' : ''}`}
+                onClick={() => setOpenFaqIndex(openFaqIndex === index ? null : index)}
+                aria-expanded={openFaqIndex === index}
+                aria-controls={`faq-answer-${index}`}
+              >
+                <span>{faq.q}</span>
+                <span className="faq-icon">
+                  <i className={`fas ${openFaqIndex === index ? 'fa-minus' : 'fa-plus'}`}></i>
+                </span>
+              </button>
+              <div
+                id={`faq-answer-${index}`}
+                className={`faq-answer ${openFaqIndex === index ? 'open' : ''}`}
+              >
+                <p>{faq.a}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
     </div>
   );
 }
