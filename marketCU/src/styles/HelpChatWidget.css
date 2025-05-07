@@ -1,6 +1,6 @@
 .help-chat-container {
   position: fixed;
-  bottom: 20px;
+  bottom: 30px;
   right: 20px;
   z-index: 9999;
   font-family: Arial, sans-serif;
@@ -10,10 +10,9 @@
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background-color: #1c4587;
-  color: white;
+  background-color: var(--lightest-color);
+  color: var(--primary-color);
   border: none;
-  font-size: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -22,11 +21,26 @@
   transition: all 0.3s ease;
   transform: scale(1);
   position: relative;
+  padding: 0;
+}
+
+.help-chat-button .help-icon-svg {
+  width: 32px;
+  height: 32px;
+  display: block;
+  fill: var(--primary-color);
+}
+
+.help-chat-button .close-icon {
+  font-size: 32px;
+  line-height: 1;
+  font-weight: 300;
+  color: var(--primary-color);
 }
 
 .help-chat-button:hover {
   transform: scale(1.05);
-  background-color: #15376c;
+  background-color: var(--light-color);
   box-shadow: 0 6px 16px rgba(28, 69, 135, 0.5);
 }
 
@@ -407,4 +421,26 @@
 
 .help-chat-button.pulse {
   animation: pulse-blue 2s infinite;
-} 
+}
+
+/* Style for the text label - Refined */
+.help-text-label {
+  position: absolute;
+  top: 105%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--light-color);
+  color: var(--primary-color);
+  padding: 3px 9px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: none;
+  white-space: nowrap;
+  z-index: 9998;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+
+/* Optional: Hide label on hover of the button? Or keep it visible? Currently always visible */ 

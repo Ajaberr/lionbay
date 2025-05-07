@@ -5,6 +5,7 @@ import '../styles/HelpChatWidget.css';
 import '../Chat.css'
 import '../styles/App.css';
 import '../App.css';
+import helpIcon from '../assets/help.svg';
 
 
 const SOCKET_URL = 'https://lionbay-api.onrender.com';
@@ -253,7 +254,7 @@ const HelpChatWidget = () => {
       {isOpen && (
         <div className="help-chat-box">
           <div className="help-chat-header">
-            <h3>Columbia Support</h3>
+            <h3>LionBay Support</h3>
             <button 
               className="help-chat-close" 
               onClick={() => setIsOpen(false)}
@@ -264,8 +265,8 @@ const HelpChatWidget = () => {
           <div className="help-chat-messages">
             {messages.length === 0 && !loading && (
               <div className="help-chat-welcome">
-                <p>👋 Hi there! Need help with something?</p>
-                <p>Our Columbia University team is here to assist you with anything marketplace-related.</p>
+                <p>👋 Hi there! How can we help?</p>
+                <p>Our LionBay admin team is here to assist. Ask us anything, report an issue, or share your suggestions for improving the platform!</p>
               </div>
             )}
             
@@ -329,12 +330,17 @@ const HelpChatWidget = () => {
       )}
       
       <button 
-        className="help-chat-button"
+        className={`help-chat-button ${isOpen ? 'open' : ''}`}
         onClick={() => setIsOpen(!isOpen)}
         aria-label="Help Chat"
       >
-        {isOpen ? '×' : '?'}
+        {isOpen ? (
+          <span className="close-icon">×</span>
+        ) : (
+          <img src={helpIcon} alt="Help" className="help-icon-svg" />
+        )}
       </button>
+      {!isOpen && <span className="help-text-label">Help?</span>}
     </div>
   );
 };

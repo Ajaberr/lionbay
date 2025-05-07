@@ -41,18 +41,33 @@
 }
 
 .discover-feature-text p {
+  /* Base styles if any are still needed globally for other p tags in this component, otherwise remove. */
+  /* For now, we'll let the new specific styles handle the description text */
+}
+
+.discover-feature-description {
+  margin-bottom: 30px; /* Space before the button */
+}
+
+.discover-feature-description p {
   font-size: 1.1rem;
-  line-height: 1.7;
+  line-height: 1.6; /* Adjusted for better flow */
   color: var(--text-color);
-  margin-bottom: 15px;
+  margin-bottom: 0.8em; /* Spacing between the logical lines */
 }
 
-.discover-feature-text p + p {
-  margin-top: -5px;
+.discover-feature-description p:last-child {
+  margin-bottom: 0; /* No extra margin for the last paragraph within this block */
+  font-style: italic;
+  color: var(--light-text); /* Softer, distinct color for the punchline */
+  margin-top: 0.5em; /* A bit of space before the punchline */
 }
 
-.discover-feature-text p:last-of-type {
-  margin-bottom: 30px;
+.discover-feature-description p:first-child {
+  font-weight: 600; /* Bolder hook line */
+  font-size: 1.15rem; /* Slightly larger hook line */
+  color: var(--primary-color); /* Primary color for the hook */
+  margin-bottom: 1em; /* More space after the hook */
 }
 
 .discover-feature-button {

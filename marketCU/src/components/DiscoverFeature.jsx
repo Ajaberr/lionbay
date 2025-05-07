@@ -8,10 +8,12 @@ const DiscoverFeature = () => {
       <div className="discover-feature-content">
         <div className="discover-feature-text">
           <h2>Swipe Your Way to Deals</h2>
-          <p>Can't decide? Just swipe.</p>
-          <p>Our discovery mode lets you browse Columbia listings like it's dating season — swipe right for "I want it," left for "nah."</p>
-          <p>It's fast, low-effort, and tailored just for you.</p>
-          <p>Low commitment, high reward.</p>
+          <div className="discover-feature-description">
+            <p>Can't decide? Just swipe.</p>
+            <p>Our discovery mode lets you browse Columbia listings like it's dating season — swipe right for "I want it," left for "nah."</p>
+            <p>It's fast, low-effort, and tailored just for you.</p>
+            <p>Low commitment, high reward.</p>
+          </div>
           <Link className="discover-feature-button" to="/discover" data-discover="true">
             <span>Start Swiping</span>
             <i className="fas fa-chevron-right"></i>

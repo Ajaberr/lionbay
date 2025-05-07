@@ -30,7 +30,7 @@ const Todo = ({ onDelete, onComplete, showCompleteButton, paymentCompleted }) =>
         aria-label="Cancel deal"
       >
         <i className="fas fa-times-circle"></i>
-        <span>Cancel Deal</span>
+        <span>Cancel</span>
       </button>
     </div>
   );

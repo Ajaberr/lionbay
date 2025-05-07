@@ -80,7 +80,7 @@ body {
   overflow-x: hidden;
   margin: 0;
   padding: 0;
-  padding-top: 70px;
+  padding-top: 65px; /* Match the header height */
 }
 
 .sign-in-container {
@@ -300,11 +300,11 @@ body {
   justify-content: space-between;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   background-color: #fff;
-  position: fixed; /* Change from sticky to fixed */
+  position: fixed !important; /* Ensure fixed position with !important */
   top: 0;
   left: 0;
   right: 0;
-  z-index: 100;
+  z-index: 1000; /* Higher z-index to match styles/App.css */
   transition: all 0.3s ease;
   padding: 0 15px;
   box-sizing: border-box;
@@ -712,23 +712,24 @@ body {
 }
 
 .contact-seller-button {
-  background-color: #1c4587;
+  /* Green Style */
+  background-color: var(--success-color);
   color: white;
   border: none;
   border-radius: 30px;
-  padding: 0.8rem 1.5rem;
-  font-size: 1.1rem;
+  padding: 0.6rem 1.2rem; /* Matched padding to others */
+  font-size: 0.9rem; /* Matched font size */
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.2s;
-  flex: 1;
+  transition: all 0.2s;
   text-align: center;
   text-decoration: none;
   display: inline-block;
 }
 
 .contact-seller-button:hover {
-  background-color: #163a70;
+  background-color: #2f9e44; /* Darker green */
+  transform: translateY(-1px);
 }
 
 .add-to-cart-button {
@@ -749,6 +750,19 @@ body {
 
 .add-to-cart-button:hover {
   background-color: #163a70;
+}
+
+/* Style for disabled Add to Cart button */
+.add-to-cart-button.disabled {
+  background-color: #ccc; /* Gray background */
+  color: #666; /* Darker gray text */
+  cursor: not-allowed;
+  transform: none; /* Prevent hover effect */
+  box-shadow: none; /* Remove hover shadow effect */
+}
+
+.add-to-cart-button.disabled:hover {
+  background-color: #ccc; /* Keep background gray on hover */
 }
 
 .owner-message {
@@ -2061,7 +2075,7 @@ img[src^="/api/placeholder"] {
   margin: 0 auto 30px auto;
   font-size: 1.1rem;
   line-height: 1.7;
-  color: var(--light-text);
+  color: var(--lightest-color); /* Changed to white for better contrast */
 }
 
 @media (max-width: 1160px) {
@@ -3300,28 +3314,10 @@ html {
 }
 
 .go-to-chat-button {
-  background-color: #1c4587;
+  /* Keep as primary button style */
+  background-color: var(--success-color);
   color: white;
   border: none;
-  border-radius: 30px;
-  padding: 0.6rem 1.2rem;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  text-align: center;
-  text-decoration: none;
-  display: inline-block;
-}
-
-.go-to-chat-button:hover {
-  background-color: #163a70;
-}
-
-.remove-from-cart-button {
-  background-color: #f5f5f5;
-  color: #666;
-  border: 1px solid #ddd;
   border-radius: 30px;
   padding: 0.6rem 1.2rem;
   font-size: 0.9rem;
@@ -3331,12 +3327,35 @@ html {
   text-align: center;
   text-decoration: none;
   display: inline-block;
+  flex: 1; /* Changed from none to 1 */
+}
+
+.go-to-chat-button:hover {
+  background-color: #2f9e44; /* Changed from var(--hover-color) to darker green */
+  transform: translateY(-1px);
+}
+
+.remove-from-cart-button {
+  /* Red Outline Style */
+  background-color: transparent;
+  color: var(--error-color);
+  border: 1px solid var(--error-color);
+  border-radius: 30px;
+  padding: 0.6rem 1.2rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  flex: 1; /* Added flex: 1 */
 }
 
 .remove-from-cart-button:hover {
-  background-color: #f0f0f0;
-  color: #1c4587;
-  border-color: #1c4587;
+  background-color: rgba(229, 62, 62, 0.05); /* Subtle red fill on hover */
+  color: #b91c1c; /* Darker red text on hover */
+  border-color: #b91c1c; /* Darker red border on hover */
 }
 
 .cart-footer {
@@ -5195,4 +5214,315 @@ html {
   .get-started-section {
     padding: 2rem 1rem;
   }
+}
+
+/* Cart Item Actions Button Styling */
+
+.cart-item-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: auto;
+  padding-top: 1rem;
+}
+
+/* Default styles removed or adjusted from general button classes if they were interfering */
+
+/* Specific styles for buttons WITHIN cart actions */
+.cart-item-actions .go-to-chat-button {
+  background-color: var(--success-color); /* Changed from var(--primary-color) */
+  color: white;
+  border: none;
+  border-radius: 30px; 
+  padding: 0.6rem 1.2rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  flex: 1; /* Changed from none to 1 */
+}
+
+.cart-item-actions .contact-seller-button {
+  background-color: var(--success-color);
+  color: white;
+  border: none;
+  border-radius: 30px;
+  padding: 0.6rem 1.2rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  flex: 1; /* Changed from none to 1 */
+}
+
+.cart-item-actions .remove-from-cart-button {
+  background-color: transparent;
+  color: var(--error-color);
+  border: 1px solid var(--error-color);
+  border-radius: 30px; 
+  padding: 0.6rem 1.2rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  flex: 1; /* Added flex: 1 */
+}
+
+.cart-item-actions .remove-from-cart-button:hover {
+  background-color: rgba(229, 62, 62, 0.05); /* Subtle red fill on hover */
+  color: #b91c1c; /* Darker red text on hover */
+  border-color: #b91c1c; /* Darker red border on hover */
+}
+
+.cart-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+.continue-shopping-button {
+  background-color: #1c4587;
+  color: white;
+  border: none;
+  border-radius: 30px;
+  padding: 0.8rem 2rem;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.continue-shopping-button:hover {
+  background-color: #163a70;
+}
+
+.empty-cart {
+  text-align: center;
+  padding: 2rem;
+  color: #666;
+}
+
+.empty-cart p {
+  margin-bottom: 1.5rem;
+  font-size: 1.1rem;
+}
+
+.browse-button {
+  background-color: #1c4587;
+  color: white;
+  border: none;
+  border-radius: 30px;
+  padding: 0.8rem 2rem;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.browse-button:hover {
+  background-color: #163a70;
+}
+
+.owner-message {
+  background-color: #f5f5f5;
+  padding: 1rem;
+  border-radius: 8px;
+  text-align: center;
+  color: #666;
+}
+
+/* Cart Badge */
+.cart-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  background-color: #1c4587;
+  color: white;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: bold;
+  margin-left: 5px;
+  position: relative;
+  top: -1px;
+  animation: badgePulse 2s infinite;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+@keyframes badgePulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(28, 69, 135, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(28, 69, 135, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(28, 69, 135, 0);
+  }
+}
+
+.sidebar-link .cart-badge {
+  position: relative;
+  top: -1px;
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  background-color: #1c4587;
+  color: white;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: bold;
+  animation: badgePulse 2s infinite;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.sidebar-link .message-badge {
+  position: relative;
+  top: -1px;
+  margin-left: 8px;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Message Badge */
+.message-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  background-color: #1c4587;
+  color: white;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: bold;
+  margin-left: 5px;
+  position: relative;
+  top: -1px;
+  animation: messageBadgePulse 2s infinite;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+@keyframes messageBadgePulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(28, 69, 135, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(28, 69, 135, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(28, 69, 135, 0);
+  }
+}
+
+/* Grayscale Preview Styles */
+.grayscale-preview-container {
+  position: relative;
+  width: 100%;
+  min-height: calc(100vh - 70px);
+  margin-top: 0; /* Remove any margin to ensure it starts right after the header */
+}
+
+.grayscale-content {
+  filter: grayscale(100%);
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.8;
+  width: 100%;
+  height: 100%;
+}
+
+.login-overlay {
+  position: fixed;
+  top: 69px; /* Start just below the header - reduced by 1px to close the gap */
+  left: 0;
+  width: 100%;
+  height: calc(100vh - 69px); /* Full height minus the adjusted top position */
+  background-color: rgba(0, 0, 0, 0.4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 99; /* High z-index but below the header and sidebar */
+}
+
+/* Ensure the header stays above the overlay */
+.header {
+  z-index: 100;
+  position: relative;
+}
+
+/* Ensure the mobile sidebar stays above the overlay */
+.mobile-sidebar {
+  z-index: 101; /* Higher than the header and overlay */
+}
+
+.sidebar-overlay {
+  z-index: 100; /* Same as header but below the sidebar */
+}
+
+.login-prompt {
+  background-color: white;
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  max-width: 500px;
+  width: 90%;
+  animation: fadeIn 0.5s ease;
+  position: relative;
+  z-index: 102; /* Above everything */
+}
+
+.login-prompt h2 {
+  font-size: 1.5rem;
+  color: #1c4587;
+  margin-bottom: 1rem;
+}
+
+.login-prompt p {
+  font-size: 1.1rem;
+  margin-bottom: 1.5rem;
+  color: #555;
+}
+
+.login-prompt .sign-in-btn {
+  background-color: #1c4587;
+  color: white;
+  border: none;
+  padding: 0.8rem 2rem;
+  font-size: 1.1rem;
+  border-radius: 30px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 8px rgba(28, 69, 135, 0.3);
+}
+
+.login-prompt .sign-in-btn:hover {
+  background-color: #163a70;
+  transform: translateY(-3px);
+  box-shadow: 0 6px 15px rgba(28, 69, 135, 0.4);
 }

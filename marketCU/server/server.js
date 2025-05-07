@@ -841,8 +841,23 @@ app.post('/api/chats/:id/complete-payment', authenticateToken, async (req, res) 
       });
 
     } else if (isBuyerOfThisChat) {
-      // BUYER'S ACTION: Mark chat as buyer_requested_completion, send system message.
+      // BUYER'S ACTION: Mark chat as buyer_requested_completion, send system message, and email seller.
       console.log(`[CompleteDealFlow] Buyer ${userId} is requesting completion for chat ${completingChatId}.`);
+
+      // Get current chat state to see if buyer already requested completion
+      // Use the already fetched completingChat object which is effectively currentChatBeforeUpdate for this check
+      if (completingChat.buyer_requested_completion) {
+        await client.query('COMMIT'); // Ensure transaction is properly closed
+        console.log(`[CompleteDealFlow] Buyer action: Completion already requested for chat ${completingChatId}.`);
+        return res.json({
+          success: true,
+          message: 'You have already requested to complete this deal.',
+          action: 'buyer_completion_already_requested',
+          chat: completingChat // Send the current chat state
+        });
+      }
+
+      // If we reach here, buyer_requested_completion is false, so proceed with update and notification.
 
       // 1. Update chat to mark buyer_requested_completion = true
       const updatedChatResult = await client.query(
@@ -857,24 +872,60 @@ app.post('/api/chats/:id/complete-payment', authenticateToken, async (req, res) 
       console.log('[CompleteDealFlow] Buyer action: Chat updated to buyer_requested_completion=true.');
 
       // 2. Create and send the system message
-      const systemMessageContent = "🟡 The buyer has requested to complete the transaction. If you've received payment, click Complete Deal to mark the item as sold.";
+      const systemMessageContent = "🟡 The buyer has requested to complete the transaction. If you\'ve received payment, click Complete Deal to mark the item as sold.";
       const systemMessageResult = await client.query(
         'INSERT INTO messages (chat_id, sender_id, content, is_system_message) VALUES ($1, $2, $3, TRUE) RETURNING *',
         [completingChatId, userId, systemMessageContent]
       );
       const systemMessage = systemMessageResult.rows[0];
       console.log('[CompleteDealFlow] Buyer action: System message created.', JSON.stringify(systemMessage));
+      
+      // ---- START EMAIL NOTIFICATION LOGIC ----
+      try {
+        const sellerResult = await pool.query('SELECT email FROM users WHERE id = $1', [updatedChat.seller_id]);
+        if (sellerResult.rows.length > 0) {
+          const sellerEmail = sellerResult.rows[0].email;
+          const frontendUrl = process.env.FRONTEND_URL || 'https://lionbay.org'; // Fallback URL
+          const chatLink = `${frontendUrl}/chats/${completingChatId}`;
+          
+          const mailOptions = {
+            from: process.env.EMAIL_USER, // Sender address
+            to: sellerEmail, // List of receivers
+            subject: 'Buyer Requested to Complete the Deal on LionBay', // Subject line
+            html: `
+              <p>A buyer has requested to complete the deal for one of your listings, "${updatedChat.product_name}", indicating they have paid.</p>
+              <p>Please log in to your LionBay account to confirm that you've received payment and click "Complete Deal" to mark the item as sold.</p>
+              <p><a href="${chatLink}" style="display: inline-block; padding: 10px 20px; font-size: 16px; color: white; background-color: #007bff; text-decoration: none; border-radius: 5px;">View Deal / Go to Chat</a></p>
+              <br>
+              <p>Listing: ${updatedChat.product_name}</p>
+              <p>If you did not expect this, please ignore this email or contact support.</p>
+            `
+          };
+
+          if (transporter) { // Check if transporter is configured
+            await transporter.sendMail(mailOptions);
+            console.log(`[CompleteDealFlow] Buyer action: Email notification sent to seller ${sellerEmail} for chat ${completingChatId}.`);
+          } else {
+            console.warn(`[CompleteDealFlow] Buyer action: Email transporter not configured. Skipping email to ${sellerEmail} for chat ${completingChatId}.`);
+          }
+        } else {
+          console.error(`[CompleteDealFlow] Buyer action: Could not find seller email for seller_id ${updatedChat.seller_id}.`);
+        }
+      } catch (emailError) {
+        console.error(`[CompleteDealFlow] Buyer action: Failed to send email notification for chat ${completingChatId}:`, emailError);
+        // Do not rollback or fail the request due to email error
+      }
+      // ---- END EMAIL NOTIFICATION LOGIC ----
 
       await client.query('COMMIT');
       console.log('[CompleteDealFlow] Buyer action: Transaction committed.');
 
       // 3. Emit new_message event for the system message
       if (io) {
-        // Need sender_email for consistent message formatting on client
-        const senderResult = await pool.query('SELECT email FROM users WHERE id = $1', [userId]); // Use pool here, not client, as transaction is committed
+        const senderResult = await pool.query('SELECT email FROM users WHERE id = $1', [userId]);
         const formattedSystemMessage = {
           ...systemMessage,
-          sender_email: senderResult.rows[0]?.email || 'system' 
+          sender_email: senderResult.rows[0]?.email || 'system'
         };
         io.to(completingChatId.toString()).emit('new_message', formattedSystemMessage);
         console.log('[CompleteDealFlow] Buyer action: new_message event emitted for system message.');
@@ -891,7 +942,7 @@ app.post('/api/chats/:id/complete-payment', authenticateToken, async (req, res) 
         success: true,
         message: 'Request to complete deal sent to seller.',
         action: 'buyer_completion_requested',
-        chat: updatedChat // Send back the updated chat object
+        chat: updatedChat
       });
     }
 

@@ -80,7 +80,7 @@ body {
   overflow-x: hidden;
   margin: 0;
   padding: 0;
-  padding-top: 70px;
+  padding-top: 65px; /* Match the height of the header */
 }
 
 .sign-in-container {
@@ -300,15 +300,14 @@ body {
   justify-content: space-between;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   background-color: #fff;
-  position: fixed; /* Change from sticky to fixed */
+  position: fixed !important; /* Ensure fixed position with !important to override any conflicting styles */
   top: 0;
   left: 0;
   right: 0;
-  z-index: 100;
+  z-index: 1000; /* Higher z-index to ensure it stays above other content */
   transition: all 0.3s ease;
   padding: 0 15px;
   box-sizing: border-box;
-  border-bottom: 1px solid rgba(28, 69, 135, 0.1);
 }
 .header img{
   height: 40px;
@@ -357,6 +356,7 @@ body {
   margin: 0 auto;
   padding: 20px;
   font-family: Arial, sans-serif;
+  margin-top: 15px; /* Add some spacing below the fixed header */
 }
 
 .market-header {
@@ -625,6 +625,7 @@ body {
   background-color: white;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  margin-top: 15px; /* Add some spacing below the fixed header */
 }
 
 .product-detail-left {
@@ -749,6 +750,7 @@ body {
   background-color: white;
   border-radius: 10px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  margin-top: 15px; /* Add some spacing below the fixed header */
 }
 
 .lionbay-header {
@@ -936,6 +938,7 @@ body {
   background-color: white;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  margin-top: 15px; /* Add some spacing below the fixed header */
 }
 
 .chats-container h1 {
@@ -1112,6 +1115,7 @@ body {
   flex-direction: column;
   height: calc(100vh - 200px);
   min-height: 500px;
+  margin-top: 15px; /* Add some spacing below the fixed header */
 }
 
 .chat-header {
@@ -1364,6 +1368,7 @@ img[src^="/api/placeholder"] {
   max-width: 1200px;
   margin: 0 auto;
   padding: 2rem 1rem;
+  margin-top: 15px; /* Add some spacing below the fixed header */
 }
 
 .hero-section {
@@ -2093,11 +2098,11 @@ img[src^="/api/placeholder"] {
   align-items: center;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   background-color: #fff;
-  position: fixed;
+  position: fixed !important; /* Ensure fixed position with !important to override any conflicting styles */
   top: 0;
   left: 0;
   right: 0;
-  z-index: 100;
+  z-index: 1000; /* Higher z-index to ensure it stays above other content */
   transition: all 0.3s ease;
   padding: 0 15px;
   box-sizing: border-box;
@@ -2234,7 +2239,7 @@ img[src^="/api/placeholder"] {
   height: 100vh;
   background-color: white;
   box-shadow: -2px 0 15px rgba(0, 0, 0, 0.1);
-  z-index: 101; /* Higher than the header and overlay */
+  z-index: 1100; /* Higher than header's z-index (1000) */
   transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   overflow-y: auto;
   border-left: 1px solid #eee;
@@ -2253,7 +2258,7 @@ img[src^="/api/placeholder"] {
   right: 0;
   bottom: 0;
   background-color: rgba(0, 0, 0, 0.5);
-  z-index: 100; /* Same as header but below the sidebar */
+  z-index: 1050; /* Between header (1000) and sidebar (1100) */
   animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   backdrop-filter: blur(3px);
 }
@@ -2786,4 +2791,52 @@ img[src^="/api/placeholder"] {
   .get-started-section h2 {
     font-size: 1.8rem;
   }
+}
+
+/* Media queries for responsive layout */
+@media (max-width: 1160px) {
+  .header {
+    position: fixed !important;
+    height: 65px !important;
+    z-index: 1000;
+  }
+  
+  body {
+    padding-top: 65px; /* Consistent padding for fixed header */
+  }
+  
+  .mobile-menu-toggle {
+    display: block;
+    order: 2;
+    margin-left: 5px;
+    margin-right: 0;
+  }
+  
+  .menu-icon {
+    font-size: 1.3rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: 0 10px; /* Slightly smaller padding on very small screens */
+  }
+  
+  body {
+    padding-top: 65px;
+  }
+}
+
+/* Modal styling */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1200; /* Higher than sidebar and header */
 }
