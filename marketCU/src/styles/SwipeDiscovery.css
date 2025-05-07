@@ -920,4 +920,36 @@
   opacity: 0;
   z-index: 2;
   animation: fadeIn 0.001s ease-out 0s forwards;
+}
+
+.swipe-header-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.reset-btn {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 30px;
+  padding: 14px 30px;
+  font-size: 1.1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reset-btn:hover {
+  background-color: #c82333;
+  transform: translateY(-3px);
+  box-shadow: 0 6px 12px rgba(220, 53, 69, 0.3);
+}
+
+.reset-btn:active {
+  transform: translateY(-1px);
 } 

@@ -152,7 +152,9 @@ const SwipeDiscovery = () => {
     if (!product || !product.image_path) {
       return null;
     }
-    return product.image_path;
+    // Split by pipe symbol and get the first image URL
+    const images = product.image_path.split('|').filter(img => img.trim());
+    return images.length > 0 ? images[0] : product.image_path;
   };
 
   const fetchProducts = async (isRefresh = false) => {
@@ -699,17 +701,34 @@ const SwipeDiscovery = () => {
       <div className="swipe-header">
         <h1>Swipe and Shop</h1>
         <p>Swipe right on items you like, left on those you don't</p>
-        <button 
-          className="refresh-btn" 
-          onClick={() => {
-            if (!isFetching) {
-              fetchProducts(true);
-            }
-          }}
-          disabled={isFetching}
-        >
-          {isFetching ? 'Refreshing...' : 'Refresh Products'}
-        </button>
+        <div className="swipe-header-buttons">
+          <button 
+            className="refresh-btn" 
+            onClick={() => {
+              if (!isFetching) {
+                fetchProducts(true);
+              }
+            }}
+            disabled={isFetching}
+          >
+            {isFetching ? 'Refreshing...' : 'Refresh Products'}
+          </button>
+          <button 
+            className="reset-btn" 
+            onClick={() => {
+              // Clear localStorage items
+              localStorage.removeItem('swipedLeft');
+              localStorage.removeItem('swipedRight');
+              // Reset state
+              setSwipedLeft([]);
+              setSwipedRight([]);
+              // Fetch products
+              fetchProducts();
+            }}
+          >
+            Reset Swipe History
+          </button>
+        </div>
       </div>
       
       <div className="swipe-area">
