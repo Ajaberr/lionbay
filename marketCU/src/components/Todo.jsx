@@ -1,7 +1,7 @@
 import React from 'react';
 import '../Chat.css';
 
-const Todo = ({ onDelete, onComplete, isSeller, paymentCompleted }) => {
+const Todo = ({ onDelete, onComplete, showCompleteButton, paymentCompleted }) => {
   // Prevent event propagation to parent container
   const handleButtonClick = (event, callback) => {
     event.stopPropagation();
@@ -11,8 +11,8 @@ const Todo = ({ onDelete, onComplete, isSeller, paymentCompleted }) => {
   
   return (
     <div className="chat-todo-actions" onClick={(e) => e.stopPropagation()}>
-      {/* Only show complete payment button for sellers and when payment isn't completed */}
-      {isSeller && !paymentCompleted && (
+      {/* Show complete payment button based on showCompleteButton prop and when payment isn't completed */}
+      {showCompleteButton && !paymentCompleted && (
         <button 
           onClick={(e) => handleButtonClick(e, onComplete)}
           className="todo-button complete-button"
@@ -23,14 +23,14 @@ const Todo = ({ onDelete, onComplete, isSeller, paymentCompleted }) => {
         </button>
       )}
 
-      {/* Always show delete button */}
+      {/* "Cancel Deal" button */}
       <button 
         onClick={(e) => handleButtonClick(e, onDelete)}
         className="todo-button delete-button"
-        aria-label="Delete chat"
+        aria-label="Cancel deal"
       >
-        <i className="fas fa-trash-alt"></i>
-        <span>Delete</span>
+        <i className="fas fa-times-circle"></i>
+        <span>Cancel Deal</span>
       </button>
     </div>
   );

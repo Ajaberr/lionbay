@@ -9,19 +9,34 @@ function ChatsList() {
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
   const { authAxios, currentUser } = useAuth();
-  const { resetUnreadCount } = useMessages();
+  const { resetUnreadCount, socket } = useMessages();
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchChats();
-    
     // Reset unread count when viewing chat list
-    resetUnreadCount();
+    resetUnreadCount(); 
     
     // Poll for new chats periodically
     const interval = setInterval(fetchChats, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, []); // resetUnreadCount is stable from context, fetchChats is component-local but stable due to no deps
+
+  // Effect for Socket.IO event listeners
+  useEffect(() => {
+    if (socket) {
+      const handleChatDeleted = ({ chatId }) => {
+        console.log('Received chat_deleted event for chat ID:', chatId);
+        setChats(prevChats => prevChats.filter(chat => chat.id !== chatId));
+      };
+
+      socket.on('chat_deleted', handleChatDeleted);
+
+      return () => {
+        socket.off('chat_deleted', handleChatDeleted);
+      };
+    }
+  }, [socket, setChats]);
 
   const fetchChats = async () => {
     try {

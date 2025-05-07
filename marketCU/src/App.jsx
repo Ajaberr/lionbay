@@ -524,7 +524,8 @@ export function MessageProvider({ children }) {
       resetUnreadCount, 
       incrementUnreadCount, 
       isChatUnread,
-      updateUnreadCount
+      updateUnreadCount,
+      socket // Expose socket instance
     }}>
       {children}
     </MessageContext.Provider>
@@ -2047,46 +2048,64 @@ function ChatsListPage() {
     };
   }, [isAuthenticated]);
 
-  // Listen for new messages to update chat list
+  // Listen for new messages to update chat list, and chat_deleted, chat_updated events
   useEffect(() => {
     if (!socketRef.current || !currentUser?.userId) return;
 
     const updateChatWithNewMessage = (message) => {
       if (!message || !message.chat_id) return;
-      
-      console.log('Received message for chat:', message.chat_id);
-      
-      if (currentUser?.userId && message.sender_id === currentUser.userId) {
-        console.log('Ignoring our own message in chat list update');
-        return;
+      if (currentUser?.userId && message.sender_id === currentUser.userId && !message.is_system_message) {
+        return; // Ignore self-sent non-system messages
       }
-      
-      setChats(prevChats => {
-        return prevChats.map(chat => {
-          if (chat.id === message.chat_id) {
-            // Increment unread count if the user is the recipient
-            const isRecipient = chat.seller_id === currentUser.userId && message.sender_id === chat.buyer_id ||
-                                chat.buyer_id === currentUser.userId && message.sender_id === chat.seller_id;
-            
-            // Update last message details
-            return {
-              ...chat,
-              last_message: message.content,
-              last_message_at: message.created_at,
-              unread_count: isRecipient ? (chat.unread_count || 0) + 1 : chat.unread_count
-            };
-          }
-          return chat;
-        });
-      });
+      setChats(prevChats => 
+        prevChats.map(c => 
+          c.id === message.chat_id ? { 
+            ...c, 
+            last_message: message.content, 
+            last_message_at: message.created_at, 
+            // Potentially update unread count if logic exists for it here based on system messages too
+          } : c
+        )
+      );
+    };
+
+    const handleChatDeleted = ({ chatId }) => {
+      console.log('ChatsListPage: Received chat_deleted event for chat ID:', chatId);
+      setChats(prevChats => prevChats.filter(chat => chat.id !== chatId));
+    };
+
+    const handleChatPaymentUpdated = (data) => { // Existing handler from previous step (seller marking complete)
+      console.log('ChatsListPage: Received chat_payment_updated event (likely seller completion):', data);
+      setChats(prevChats => prevChats.map(c =>
+        c.id === data.chatId
+          ? { ...c, payment_completed: data.payment_completed }
+          : c
+      ));
+    };
+
+    const handleChatUpdated = (updatedChatData) => {
+      console.log('ChatsListPage: Received chat_updated event (e.g., buyer requested completion):', updatedChatData);
+      setChats(prevChats => prevChats.map(c =>
+        c.id === updatedChatData.id
+          ? { ...c, ...updatedChatData } // Update the chat with all new data
+          : c
+      ));
     };
 
     socketRef.current.on('new_message', updateChatWithNewMessage);
+    socketRef.current.on('chat_deleted', handleChatDeleted);
+    socketRef.current.on('chat_payment_updated', handleChatPaymentUpdated); // Keep for seller's direct completion
+    socketRef.current.on('chat_updated', handleChatUpdated); // For buyer_requested_completion updates
 
     return () => {
-      socketRef.current.off('new_message', updateChatWithNewMessage);
+      if (socketRef.current) {
+        socketRef.current.off('new_message', updateChatWithNewMessage);
+        socketRef.current.off('chat_deleted', handleChatDeleted);
+        socketRef.current.off('chat_payment_updated', handleChatPaymentUpdated);
+        socketRef.current.off('chat_updated', handleChatUpdated);
+      }
     };
-  }, [socketRef.current, currentUser?.userId]);
+  }, [socketRef.current, currentUser?.userId, setChats]);
 
   // Fetch chats data
   useEffect(() => {
@@ -2126,6 +2145,7 @@ function ChatsListPage() {
     if (!chatToDelete || deleting) return;
     
     setDeleting(true);
+    console.log(`[ChatsListPage] confirmDeleteChat: Attempting to delete chat ID: ${chatToDelete} via API.`); // Added log
     try {
       await authAxios.delete(`/chats/${chatToDelete}`);
       setChats(prevChats => prevChats.filter(chat => chat.id !== chatToDelete));
@@ -2156,15 +2176,15 @@ function ChatsListPage() {
     setCompleting(true);
     try {
       // This would connect to your API endpoint for completing payments
-      // await authAxios.post(`/chats/${chatToComplete}/complete-payment`);
+      await authAxios.post(`/chats/${chatToComplete}/complete-payment`);
       
-      // For now, just update the UI state
+      // Update local chat state to reflect completion immediately
       setChats(prevChats => prevChats.map(chat => 
         chat.id === chatToComplete 
           ? {...chat, payment_completed: true} 
           : chat
       ));
-      setToastMessage('Payment marked as completed.');
+      setToastMessage('Payment marked as completed successfully.');
       setToastType('success');
       setShowToast(true);
     } catch (err) {
@@ -2269,9 +2289,17 @@ function ChatsListPage() {
           <div className="chats-list">
             {chats.map(chat => {
               const isSeller = currentUser?.userId === chat.seller_id;
+              const isCurrentUserBuyer = currentUser?.userId === chat.buyer_id;
               const chatPartnerEmail = isSeller ? chat.buyer_email : chat.seller_email;
               const chatClass = isSeller ? 'seller-chat' : 'buyer-chat';
               
+              const showCompleteButtonForThisUser = 
+                !chat.payment_completed && // Deal not fully completed by seller yet
+                (
+                  isSeller || // Seller can always attempt to complete if not already completed
+                  (isCurrentUserBuyer && !chat.buyer_requested_completion) // Buyer can complete if they haven't requested yet
+                );
+
               return (
                 <div 
                   key={chat.id} 
@@ -2320,7 +2348,7 @@ function ChatsListPage() {
                         setChatToComplete(chat.id);
                         setShowCompleteConfirm(true);
                       }}
-                      isSeller={isSeller}
+                      showCompleteButton={showCompleteButtonForThisUser} // Pass the new prop
                       paymentCompleted={chat.payment_completed}
                     />
                   </div>
@@ -2331,30 +2359,47 @@ function ChatsListPage() {
         )}
       </div>
       
-      {showDeleteConfirm && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h3>Delete Chat</h3>
-            <p>This will delete the chat and remove the item from your cart. This cannot be undone.</p>
-            <div className="modal-actions">
-              <button 
-                className="modal-btn cancel" 
-                onClick={() => setShowDeleteConfirm(false)}
-                disabled={deleting}
-              >
-                Cancel
-              </button>
-              <button 
-                className="modal-btn delete" 
-                onClick={handleDeleteChat}
-                disabled={deleting}
-              >
-                {deleting ? 'Deleting...' : 'Delete'}
-              </button>
+      {showDeleteConfirm && (() => {
+        // Find the chat being considered for cancellation to determine user's role
+        const chatBeingCancelled = chats.find(c => c.id === chatToDelete);
+        let modalText = "This will cancel the deal and delete the chat. This cannot be undone."; // Default
+
+        if (chatBeingCancelled && currentUser) {
+          const isCurrentUserTheSeller = currentUser.userId === chatBeingCancelled.seller_id;
+          const isCurrentUserTheBuyer = currentUser.userId === chatBeingCancelled.buyer_id;
+
+          if (isCurrentUserTheSeller) {
+            modalText = "This will cancel the deal, delete the chat, and may affect the buyer\'s cart if the item was added from this chat. This cannot be undone.";
+          } else if (isCurrentUserTheBuyer) {
+            modalText = "This will cancel the deal, delete the chat, and remove the item from your cart (if added via this chat). This cannot be undone.";
+          }
+        }
+
+        return (
+          <div className="modal-overlay">
+            <div className="modal-content">
+              <h3>Cancel Deal</h3>
+              <p>{modalText}</p>
+              <div className="modal-actions">
+                <button 
+                  className="modal-btn cancel" 
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={deleting}
+                >
+                  Keep Chat
+                </button>
+                <button 
+                  className="modal-btn delete" // Class can remain 'delete' for styling, or change if needed
+                  onClick={confirmDeleteChat} // This function handles the "cancel deal" logic now
+                  disabled={deleting}
+                >
+                  {deleting ? 'Cancelling...' : 'Yes, Cancel Deal'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
       
       {showCompleteConfirm && (
         <div className="modal-overlay">
@@ -2481,42 +2526,41 @@ function ChatPage() {
 
     // Listen for new messages from other users
     const handleNewMessage = (message) => {
-      // 1. Ignore messages sent by the current user coming back via socket
-      if (currentUser?.userId && message.sender_id === currentUser.userId) {
-        console.log('Ignoring self-sent message received via socket:', message.id);
-        return; // Don't add our own messages coming back from the socket
+      if (currentUser?.userId === message.sender_id && !message.is_system_message) {
+        // If it IS a system message, even if sender_id is current user (like buyer requested completion), we want to show it.
+        return; 
       }
-      
-      // 2. Handle messages from other users
-      console.log('Received new message via socket from other user:', message);
-
-      // Add message from other user to state
       setMessages(prevMessages => {
-        // Avoid duplicate messages by ID
-        if (prevMessages.some(m => m.id === message.id)) {
-          console.log('Duplicate message ignored:', message.id);
-          return prevMessages; // Don't add if ID already exists
-        }
-        // Use a safe immutable update
-        // Add the new message from the other user
-        console.log('Adding new message from other user to state:', message.id);
+        if (prevMessages.some(m => m.id === message.id)) return prevMessages;
         return [...prevMessages, message];
       });
-      
-      // Auto-scroll to bottom unless user has manually scrolled up
-      if (!userScrolled) {
-        scrollToBottom();
+      if (!userScrolled) scrollToBottom();
+    };
+
+    const handleChatPaymentUpdated = (data) => { // This is for when seller completes the deal fully
+      if (data.chatId === id) {
+        console.log('ChatPage: Received chat_payment_updated (seller completed deal):', data);
+        setChat(prevChat => ({ ...prevChat, payment_completed: data.payment_completed, buyer_requested_completion: true })); // Also assume buyer request is fulfilled
+      }
+    };
+
+    const handleChatUpdated = (updatedChatData) => { // For buyer_requested_completion flag updates
+      if (updatedChatData.id === id) {
+        console.log('ChatPage: Received chat_updated (e.g. buyer requested completion):', updatedChatData);
+        setChat(prevChat => ({ ...prevChat, ...updatedChatData }));
       }
     };
 
     socket.on('new_message', handleNewMessage);
+    socket.on('chat_payment_updated', handleChatPaymentUpdated); // From seller's full completion
+    socket.on('chat_updated', handleChatUpdated); // From buyer's request completion
 
-    // Cleanup on unmount or when dependencies change
     return () => {
-      console.log(`Removing socket listener for chat ${id}`);
       socket.off('new_message', handleNewMessage);
+      socket.off('chat_payment_updated', handleChatPaymentUpdated);
+      socket.off('chat_updated', handleChatUpdated);
     };
-  }, [socket, currentUser?.userId, id, userScrolled]); // Dependencies: socket, user ID, chat ID, userScrolled
+  }, [socket, currentUser?.userId, id, userScrolled, setChat, setMessages]); // Added setMessages
 
   // Fetch chat and message data
   useEffect(() => {
@@ -2718,8 +2762,12 @@ function ChatPage() {
     setCompleting(true);
     try {
       // This would connect to your API endpoint for completing payments
-      // await authAxios.post(`/chats/${id}/complete-payment`);
+      console.log(`ChatPage: Attempting to complete payment for chat ID: ${id}`); // Added log
+      await authAxios.post(`/chats/${id}/complete-payment`);
       
+      // Update local chat state to reflect completion immediately
+      setChat(prevChat => ({ ...prevChat, payment_completed: true }));
+
       setToastMessage("Payment marked as completed successfully.");
       setToastType("success");
       setShowToast(true);
@@ -2829,7 +2877,14 @@ function ChatPage() {
   // --- If all checks pass, render the chat ---
   console.log(`>>> ChatPage Render: All checks passed. User ID: ${currentUser.userId}`);
 
-  const isSeller = currentUser.userId === chat?.seller_id;
+  const isCurrentUserBuyer = currentUser?.userId === chat?.buyer_id;
+  const isCurrentUserSeller = currentUser?.userId === chat?.seller_id;
+
+  // Determine if Complete Deal button should be disabled
+  const completeDealButtonDisabled = 
+    completing || 
+    chat?.payment_completed || // Already completed by seller
+    (isCurrentUserBuyer && chat?.buyer_requested_completion); // Buyer already requested
 
   return (
     <div className="chat-page">
@@ -2846,16 +2901,16 @@ function ChatPage() {
           </div>
           <div className="chat-header-right">
             <div className="role-indicator">
-              <span className={`role-badge ${isSeller ? 'seller' : 'buyer'}`}>
-                {isSeller ? 'SELLING' : 'BUYING'}
+              <span className={`role-badge ${isCurrentUserSeller ? 'seller' : 'buyer'}`}>
+                {isCurrentUserSeller ? 'SELLING' : 'BUYING'}
               </span>
             </div>
             <button 
               className="complete-payment-button" 
               onClick={() => setShowCompleteConfirm(true)}
-              disabled={completing}
+              disabled={completeDealButtonDisabled} // Updated disabled logic
             >
-              Complete
+              Complete Deal
             </button>
             <button 
               className="delete-chat-button" 
@@ -2882,7 +2937,7 @@ function ChatPage() {
               {messages.map((message) => (
                 <div
                   key={message.id || `temp-${message.tempId}`}
-                  className={getMessageClassName(message)}
+                  className={`${getMessageClassName(message)} ${message.is_system_message ? 'system-message' : ''}`}
                 >
                   <div className="message-content">
                     <p>{message.content}</p>
@@ -2992,28 +3047,12 @@ function ProtectedRoute({ children }) {
 }
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-  };
-
   return (
     <Router>
       <AuthProvider>
         <CartProvider>
           <MessageProvider>
-            <AppContent setSidebarOpen={setSidebarOpen} />
-            <MobileSidebar 
-              isOpen={sidebarOpen} 
-              onClose={() => setSidebarOpen(false)} 
-              isAuthenticated={isAuthenticated}
-              isVerified={isAuthenticated}
-              onLogout={handleLogout}
-            />
+            <AppContent />
           </MessageProvider>
         </CartProvider>
       </AuthProvider>
@@ -3021,16 +3060,34 @@ function App() {
   );
 }
 
-function AppContent({ setSidebarOpen }) {
-  const { isAuthenticated, currentUser, logout } = useAuth();
+function AppContent() {
+  const { 
+    isAuthenticated, 
+    currentUser, 
+    logout: authContextLogout, // Renamed from AuthContext
+    isVerified // Get from AuthContext (currently hardcoded to true if authenticated)
+  } = useAuth();
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [globalSocket, setGlobalSocket] = useState(null);
-  const location = useLocation(); // Add useLocation hook to get current path
+  const location = useLocation();
+
+  // Logout handler for the mobile sidebar
+  const handleMobileSidebarLogout = () => {
+    if (authContextLogout) {
+      authContextLogout(); // This calls AuthContext's logout (which includes page reload)
+    }
+    setIsMobileSidebarOpen(false); // Close sidebar UI
+  };
   
-  // Set up global socket connection for unread messages
+  // Existing useEffect for globalSocket (should remain as is)
   useEffect(() => {
     if (!isAuthenticated || !currentUser) {
       console.log('Skipping socket connection: not authenticated or no user data');
+      if (globalSocket) { // Disconnect if socket exists and auth changes
+        globalSocket.disconnect();
+        setGlobalSocket(null);
+      }
       return;
     }
     
@@ -3046,6 +3103,11 @@ function AppContent({ setSidebarOpen }) {
       return;
     }
     
+    // Ensure to disconnect previous socket if it exists to prevent multiple connections
+    if (globalSocket) {
+        globalSocket.disconnect();
+    }
+
     const newSocket = io(SOCKET_URL, {
       auth: { token }
     });
@@ -3066,22 +3128,20 @@ function AppContent({ setSidebarOpen }) {
         newSocket.disconnect();
       }
     };
-  }, [isAuthenticated, currentUser]);
-  
-  const handleLogout = () => {
-    if (logout) {
-      logout();
-      // Force navigation to home page
-      window.location.href = '/';
-    }
-  };
-  
-  // Check if current route is a chat page
+  }, [isAuthenticated, currentUser]); // Dependencies are correct
+
   const isOnChatPage = location.pathname.match(/^\/chats\/[^/]+$/);
   
   return (
     <>
-      <HeadBar openSidebar={() => setSidebarOpen(true)} />
+      <HeadBar openSidebar={() => setIsMobileSidebarOpen(true)} />
+      <MobileSidebar 
+        isOpen={isMobileSidebarOpen} 
+        onClose={() => setIsMobileSidebarOpen(false)}
+        isAuthenticated={isAuthenticated} // From useAuth()
+        isVerified={isVerified}          // From useAuth()
+        onLogout={handleMobileSidebarLogout}
+      />
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/home" element={<HomePage />} />
@@ -3127,12 +3187,9 @@ function AppContent({ setSidebarOpen }) {
             <SwipeDiscovery />
           </GrayscalePreview>
         } />
-        {/* Catch-all route for non-existent paths */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-      {/* Render SiteFooter only if not on a chat page */}
       {!isOnChatPage && <SiteFooter />}
-      {/* Render HelpChatWidget only if not on a chat page */}
       {!isOnChatPage && <HelpChatWidget />}
       {toast && <ToastNotification {...toast} onClose={() => setToast(null)} />}
     </>
@@ -4322,11 +4379,11 @@ function MobileSidebar({ isOpen, onClose, isAuthenticated, isVerified, onLogout 
               
               <Link to="/chats" className="sidebar-link" onClick={onClose}>
                 <i className="fas fa-comments sidebar-icon"></i>
-                DMs {<span className="message-badge">{<MessageCount />}</span>}
+                DMs {<MessageCount /> && <span className="mobile-badge">{<MessageCount />}</span>}
               </Link>
               
               <button className="mobile-logout-button" onClick={() => {
-                onLogout();
+                onLogout(); 
                 onClose();
               }}>
                 <i className="fas fa-sign-out-alt sidebar-icon" style={{ color: "white", marginRight: "10px" }}></i>
@@ -4750,10 +4807,10 @@ function ProfilePage() {
                       id="fullName"
                       name="fullName"
                       value={profileData.fullName}
-                      onChange={handleChange}
-                      placeholder="Your full name"
-                      className={formErrors.fullName ? 'error-border' : ''}
-                    />
+                  onChange={handleChange}
+                  placeholder="Your full name"
+                  className={formErrors.fullName ? 'error-border' : ''}
+                />
                     <button 
                       type="button" 
                       className="verify-button" 

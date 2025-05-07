@@ -248,9 +248,14 @@
   border: 1px solid rgba(28, 69, 135, 0.2);
   border-radius: 24px;
   background-color: white;
+  color: #333 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
   font-size: 14px;
-  transition: all 0.2s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  line-height: 1.4;
+  resize: none;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .help-chat-input:focus {

@@ -560,7 +560,7 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
         SELECT c.*, 
           p.name as product_name, p.price as product_price, p.image_path as product_image,
           u1.email as buyer_email, u2.email as seller_email,
-          (SELECT MAX(created_at) FROM messages WHERE chat_id = c.id) as last_message_at,
+          (SELECT MAX(created_at) FROM messages WHERE chat_id = c.id) as calculated_last_message_at,
           (SELECT ${useContentColumn ? 'content' : 'message'} FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message,
           (SELECT sender_id FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_sender_id
         FROM chats c
@@ -568,7 +568,7 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
         JOIN users u1 ON c.buyer_id = u1.id
         JOIN users u2 ON c.seller_id = u2.id
         WHERE c.buyer_id = $1 OR c.seller_id = $1 
-        ORDER BY last_message_at DESC NULLS LAST, c.created_at DESC
+        ORDER BY calculated_last_message_at DESC NULLS LAST, c.created_at DESC
       `;
       
       const chatsResult = await pool.query(chatsQuery, [userId]);
@@ -668,6 +668,7 @@ app.get('/api/chats/:id/messages', authenticateToken, async (req, res) => {
 
 // Delete a specific chat and its messages, also remove from cart if it was added
 app.delete('/api/chats/:id', authenticateToken, async (req, res) => {
+  console.log(`[DeleteChat] Attempting to delete chat ID: ${req.params.id} by user ID: ${req.user.userId}`); // Log entry
   try {
     const chatId = req.params.id;
     const userId = req.user.userId;
@@ -679,27 +680,40 @@ app.delete('/api/chats/:id', authenticateToken, async (req, res) => {
     );
     
     if (chatResult.rows.length === 0) {
+      console.log(`[DeleteChat] Chat not found for ID: ${chatId}`);
       return res.status(404).json({ error: 'Chat not found' });
     }
     
     const chat = chatResult.rows[0];
+    console.log(`[DeleteChat] Chat data: ${JSON.stringify(chat)}`);
+    console.log(`[DeleteChat] Comparing userId (${userId}) with chat.buyer_id (${chat.buyer_id}) and chat.seller_id (${chat.seller_id})`);
     
     // Ensure user is authorized to delete this chat (must be buyer or seller)
     if (chat.buyer_id !== userId && chat.seller_id !== userId) {
+      console.log(`[DeleteChat] User ${userId} is NOT authorized to delete chat ${chatId}. Authorization failed.`);
       return res.status(403).json({ error: 'Unauthorized to delete this chat' });
     }
+    console.log(`[DeleteChat] User ${userId} IS authorized to delete chat ${chatId}.`);
     
     // Start transaction
     await pool.query('BEGIN');
     
     try {
-      // 1. Delete associated cart items (if user is the buyer)
+      // 1. Delete associated cart items (if user is the buyer AND cart is linked by product_id)
+      // This existing logic might be for a different type of cart association.
       if (chat.buyer_id === userId) {
+        console.log(`[DeleteChat] User ${userId} is buyer, attempting to delete cart_items by user_id and product_id ${chat.product_id}`);
         await pool.query(
           'DELETE FROM cart_items WHERE user_id = $1 AND product_id = $2',
           [userId, chat.product_id]
         );
       }
+
+      // 1b. NEW: Delete any cart_items directly referencing this chat_id
+      // This addresses the cart_items_chat_id_fkey constraint.
+      console.log(`[DeleteChat] Deleting cart_items directly linked to chat_id ${chatId}`);
+      const cartDeleteResult = await pool.query('DELETE FROM cart_items WHERE chat_id = $1 RETURNING id', [chatId]);
+      console.log(`[DeleteChat] Deleted ${cartDeleteResult.rowCount} cart_items linked by chat_id.`);
       
       // 2. Delete all messages in the chat
       await pool.query(
@@ -716,6 +730,15 @@ app.delete('/api/chats/:id', authenticateToken, async (req, res) => {
       // Commit the transaction
       await pool.query('COMMIT');
       
+      // Notify both users involved in the chat via Socket.IO
+      if (io) { // Ensure io is defined
+        console.log(`Emitting chat_deleted event for chat ${chatId} to buyer ${chat.buyer_id} and seller ${chat.seller_id}`);
+        io.to(chat.buyer_id).emit('chat_deleted', { chatId });
+        io.to(chat.seller_id).emit('chat_deleted', { chatId });
+      } else {
+        console.warn('Socket.IO (io) is not defined. Cannot emit chat_deleted event.');
+      }
+
       res.json({ 
         success: true, 
         message: 'Chat and all associated messages have been deleted successfully' 
@@ -728,6 +751,160 @@ app.delete('/api/chats/:id', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error deleting chat:', error);
     res.status(500).json({ error: 'Failed to delete chat' });
+  }
+});
+
+// Endpoint to mark a chat payment as completed (now a full "complete deal" flow)
+app.post('/api/chats/:id/complete-payment', authenticateToken, async (req, res) => {
+  const completingChatId = req.params.id;
+  const userId = req.user.userId;
+  console.log(`[CompleteDealFlow] Received request for chat ID: ${completingChatId}, User ID: ${userId}`);
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+    console.log('[CompleteDealFlow] Transaction started.');
+
+    const completingChatResult = await client.query('SELECT * FROM chats WHERE id = $1', [completingChatId]);
+    if (completingChatResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+    const completingChat = completingChatResult.rows[0];
+    const productId = completingChat.product_id;
+
+    // Determine role of the user initiating the request for THIS specific chat
+    const isSellerOfThisChat = completingChat.seller_id === userId;
+    const isBuyerOfThisChat = completingChat.buyer_id === userId;
+
+    if (!isSellerOfThisChat && !isBuyerOfThisChat) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Unauthorized to modify this chat' });
+    }
+
+    if (isSellerOfThisChat) {
+      // SELLER'S ACTION: Full "Complete Deal" logic
+      console.log(`[CompleteDealFlow] Seller ${userId} is completing the deal for product ${productId}.`);
+
+      const productResult = await client.query('SELECT * FROM products WHERE id = $1', [productId]);
+      if (productResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Product not found, cannot complete deal.' });
+      }
+
+      console.log(`[CompleteDealFlow] SKIPPING archive product ID ${productId} to SoldProducts for seller action.`);
+
+      const allChatsForProductResult = await client.query('SELECT id, buyer_id, seller_id FROM chats WHERE product_id = $1', [productId]);
+      const chatsToDelete = allChatsForProductResult.rows;
+      const chatIdsToDelete = chatsToDelete.map(c => c.id);
+      console.log(`[CompleteDealFlow] Seller action: Found ${chatsToDelete.length} chats to delete for product ${productId}.`);
+
+      let messagesDeletedCount = 0;
+      if (chatIdsToDelete.length > 0) {
+        await client.query('DELETE FROM cart_items WHERE chat_id = ANY($1::uuid[])', [chatIdsToDelete]);
+        console.log(`[CompleteDealFlow] Seller action: Deleted cart_items linked to specific chats for product ${productId}.`);
+        
+        const deleteMessagesResult = await client.query('DELETE FROM messages WHERE chat_id = ANY($1::uuid[]) RETURNING id', [chatIdsToDelete]);
+        messagesDeletedCount = deleteMessagesResult.rowCount;
+        console.log(`[CompleteDealFlow] Seller action: Deleted ${messagesDeletedCount} messages for product ${productId}.`);
+
+        await client.query('DELETE FROM chats WHERE id = ANY($1::uuid[])', [chatIdsToDelete]);
+        console.log(`[CompleteDealFlow] Seller action: Deleted ${chatIdsToDelete.length} chat records for product ${productId}.`);
+      }
+
+      console.log(`[CompleteDealFlow] Seller action: Deleting all cart_items for product ID ${productId}.`);
+      const productCartDeleteResult = await client.query('DELETE FROM cart_items WHERE product_id = $1 RETURNING id', [productId]);
+      console.log(`[CompleteDealFlow] Seller action: Deleted ${productCartDeleteResult.rowCount} cart_items linked directly to product ${productId}.`);
+
+      console.log(`[CompleteDealFlow] Seller action: Deleting product ID ${productId} from Products table.`);
+      await client.query('DELETE FROM products WHERE id = $1', [productId]);
+      
+      await client.query('COMMIT');
+      console.log('[CompleteDealFlow] Seller action: Transaction committed.');
+
+      if (io && chatIdsToDelete.length > 0) {
+        chatsToDelete.forEach(chatInfo => {
+          io.to(chatInfo.buyer_id.toString()).emit('chat_deleted', { chatId: chatInfo.id, productId: productId });
+          io.to(chatInfo.seller_id.toString()).emit('chat_deleted', { chatId: chatInfo.id, productId: productId });
+        });
+      }
+      return res.json({
+        success: true,
+        message: 'Deal completed by seller. Product removed and all associated chats cleared. (Archiving skipped)',
+        action: 'seller_deal_completed',
+        productIdDeleted: productId,
+        chatsDeletedCount: chatIdsToDelete.length,
+        messagesDeletedCount
+      });
+
+    } else if (isBuyerOfThisChat) {
+      // BUYER'S ACTION: Mark chat as buyer_requested_completion, send system message.
+      console.log(`[CompleteDealFlow] Buyer ${userId} is requesting completion for chat ${completingChatId}.`);
+
+      // 1. Update chat to mark buyer_requested_completion = true
+      const updatedChatResult = await client.query(
+        'UPDATE chats SET buyer_requested_completion = TRUE WHERE id = $1 RETURNING *',
+        [completingChatId]
+      );
+      if (updatedChatResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Chat not found or could not be updated.' });
+      }
+      const updatedChat = updatedChatResult.rows[0];
+      console.log('[CompleteDealFlow] Buyer action: Chat updated to buyer_requested_completion=true.');
+
+      // 2. Create and send the system message
+      const systemMessageContent = "🟡 The buyer has requested to complete the transaction. If you've received payment, click Complete Deal to mark the item as sold.";
+      const systemMessageResult = await client.query(
+        'INSERT INTO messages (chat_id, sender_id, content, is_system_message) VALUES ($1, $2, $3, TRUE) RETURNING *',
+        [completingChatId, userId, systemMessageContent]
+      );
+      const systemMessage = systemMessageResult.rows[0];
+      console.log('[CompleteDealFlow] Buyer action: System message created.', JSON.stringify(systemMessage));
+
+      await client.query('COMMIT');
+      console.log('[CompleteDealFlow] Buyer action: Transaction committed.');
+
+      // 3. Emit new_message event for the system message
+      if (io) {
+        // Need sender_email for consistent message formatting on client
+        const senderResult = await pool.query('SELECT email FROM users WHERE id = $1', [userId]); // Use pool here, not client, as transaction is committed
+        const formattedSystemMessage = {
+          ...systemMessage,
+          sender_email: senderResult.rows[0]?.email || 'system' 
+        };
+        io.to(completingChatId.toString()).emit('new_message', formattedSystemMessage);
+        console.log('[CompleteDealFlow] Buyer action: new_message event emitted for system message.');
+      }
+      
+      // 4. Emit an event to specifically update chat state on clients, including the new buyer_requested_completion flag
+      if (io) {
+          io.to(updatedChat.buyer_id.toString()).emit('chat_updated', updatedChat);
+          io.to(updatedChat.seller_id.toString()).emit('chat_updated', updatedChat);
+          console.log('[CompleteDealFlow] Buyer action: chat_updated event emitted.');
+      }
+
+      return res.json({
+        success: true,
+        message: 'Request to complete deal sent to seller.',
+        action: 'buyer_completion_requested',
+        chat: updatedChat // Send back the updated chat object
+      });
+    }
+
+  } catch (error) {
+    if (client) { 
+      await client.query('ROLLBACK');
+      console.log('[CompleteDealFlow] Transaction rolled back due to error.');
+    }
+    console.error(`[CompleteDealFlow] Error for chat ID ${completingChatId}:`, error.message, error.stack);
+    res.status(500).json({ error: 'Failed to process request.', details: error.message });
+  } finally {
+    if (client) {
+      client.release();
+      console.log('[CompleteDealFlow] Database client released.');
+    }
   }
 });
 
