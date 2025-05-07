@@ -1416,7 +1416,6 @@ function CreateProductPage() {
   const [previewImages, setPreviewImages] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadMethod, setUploadMethod] = useState('url'); // 'url' or 'file'
   const [termsAgreed, setTermsAgreed] = useState(false);
   
   // Toast notification state
@@ -1603,13 +1602,8 @@ function CreateProductPage() {
   };
 
   const uploadImages = async () => {
-    if (uploadMethod === 'url') {
-      // URL method: Return the URLs as-is
-      return previewImages;
-    } else {
-      // File method: Use the base64 encoded images
-      return previewImages;
-    }
+    // File method: Use the base64 encoded images
+    return previewImages;
   };
 
   const removeImage = (index) => {
@@ -1617,11 +1611,9 @@ function CreateProductPage() {
     updatedPreviews.splice(index, 1);
     setPreviewImages(updatedPreviews);
     
-    if (uploadMethod === 'file') {
-      const updatedFiles = [...selectedFiles];
-      updatedFiles.splice(index, 1);
-      setSelectedFiles(updatedFiles);
-    }
+    const updatedFiles = [...selectedFiles];
+    updatedFiles.splice(index, 1);
+    setSelectedFiles(updatedFiles);
     
     // Update formData.image_path with pipe delimiter
     setFormData({
@@ -1657,15 +1649,6 @@ function CreateProductPage() {
       
       if (!formData.condition) {
         setToastMessage('Condition is required');
-        setToastType('error');
-        setShowToast(true);
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Validate if "Other" category is selected but not specified
-      if (formData.category === 'Other' && !formData.other_category.trim()) {
-        setToastMessage('Please specify your category when \'Other\' is selected.');
         setToastType('error');
         setShowToast(true);
         setIsSubmitting(false);
@@ -1789,7 +1772,7 @@ function CreateProductPage() {
         details: formData.details.trim(),
         condition: formData.condition,
         price: priceValue,
-        category: formData.category === 'Other' ? formData.other_category.trim() : formData.category,
+        category: formData.category,
         image_path: imagePathString
       };
       
@@ -1901,23 +1884,8 @@ function CreateProductPage() {
               <option value="Furniture & Storage">Furniture & Storage</option>
               <option value="Clothing & Fashion">Clothing & Fashion</option>
               <option value="School Supplies">School Supplies</option>
-              <option value="Other">Other</option>
             </select>
           </div>
-          
-          {formData.category === 'Other' && (
-            <div className="form-group">
-              <label htmlFor="other_category">Specify Category</label>
-              <input
-                type="text"
-                id="other_category"
-                name="other_category"
-                value={formData.other_category}
-                onChange={handleChange}
-                placeholder="Enter custom category"
-              />
-            </div>
-          )}
           
           <div className="form-group">
             <label htmlFor="details">Details</label>
@@ -1939,73 +1907,67 @@ function CreateProductPage() {
           <div className="form-group">
             <label>Product Images (Up to 4)</label>
             
-            <div className="upload-options">
-              <button 
-                type="button" 
-                className={`upload-option-btn ${uploadMethod === 'url' ? 'active' : ''}`}
-                onClick={() => setUploadMethod('url')}
-              >
-                Use URL
-              </button>
-              <button 
-                type="button" 
-                className={`upload-option-btn ${uploadMethod === 'file' ? 'active' : ''}`}
-                onClick={() => setUploadMethod('file')}
-              >
-                Upload Files
-              </button>
+            <div className="file-upload-container">
+              <input
+                type="file"
+                id="image_file"
+                accept="image/*"
+                onChange={handleFileUpload}
+                className="file-upload-input"
+                multiple
+              />
+              <label htmlFor="image_file" className="file-upload-label">
+                Choose files (max 4)
+              </label>
+              <small>Select up to 4 image files (JPEG, PNG, GIF, etc.)</small>
             </div>
             
-            {uploadMethod === 'url' ? (
-              <div>
-                <textarea
-                  id="image_urls"
-                  placeholder="Enter image URLs (one per line or space-separated)"
-                  onChange={(e) => handleImageUrlChange(e.target.value)}
-                  rows="3"
-                ></textarea>
-                <small>Enter up to 4 image URLs, separated by line breaks or spaces</small>
+            {previewImages.length > 0 && (
+              <div className="image-previews">
+                {previewImages.map((image, index) => (
+                  <div key={index} className="image-preview-item">
+                    <img src={image} alt={`Product preview ${index + 1}`} />
+                    <button 
+                      type="button" 
+                      className="remove-image"
+                      onClick={() => removeImage(index)}
+                      aria-label={`Remove image ${index + 1}`}
+                    >
+                      ×
+                    </button>
+                    <div className="image-preview-count">
+                      {index + 1}/{previewImages.length}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ) : (
-              <div className="file-upload-container">
-                <input
-                  type="file"
-                  id="image_file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="file-upload-input"
-                  multiple="multiple"
-                />
-                <label htmlFor="image_file" className="file-upload-label">
-                  Choose files (max 4)
-                </label>
-                <small className="file-upload-help">Hold Ctrl (or Cmd) to select multiple files</small>
+            )}
+            
+            {previewImages.length > 0 && (
+              <div className="image-upload-status">
+                <span>{previewImages.length} of 4 images added</span>
+                {previewImages.length === 4 && (
+                  <span className="max-reached">Maximum reached</span>
+                )}
+              </div>
+            )}
+            
+            {previewImages.length === 0 && (
+              <div className="image-preview empty">
+                <span>No preview</span>
               </div>
             )}
             
             {imageError && <div className="error-message">{imageError}</div>}
             
-            {uploadProgress > 0 && (
+            {isSubmitting && uploadProgress > 0 && (
               <div className="upload-progress">
-                <div className="progress-bar" style={{width: `${uploadProgress}%`}}></div>
-                <span>{uploadProgress}%</span>
-              </div>
-            )}
-            
-            {previewImages.length > 0 && (
-              <div className="image-previews-grid">
-                {previewImages.map((image, index) => (
-                  <div key={index} className="image-preview-item">
-                    <img src={image} alt={`Preview ${index + 1}`} />
-                    <button 
-                      type="button" 
-                      className="remove-image-btn"
-                      onClick={() => removeImage(index)}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
+                <div 
+                  className="upload-progress-bar" 
+                  style={{width: `${uploadProgress}%`}}
+                >
+                  {uploadProgress}%
+                </div>
               </div>
             )}
           </div>
@@ -3578,8 +3540,6 @@ function ProductManagementPage() {
   });
   const [formErrors, setFormErrors] = useState({});
   const [imageFile, setImageFile] = useState(null);
-  const [previewImage, setPreviewImage] = useState('');
-  const [uploadMethod, setUploadMethod] = useState('file');
   const [previewImages, setPreviewImages] = useState([]);
 
   const categories = [
@@ -3727,15 +3687,6 @@ function ProductManagementPage() {
     } else if (previewImages.length > 4) {
       errors.images = "Maximum 4 images allowed";
       hasError = true;
-    } else {
-      // Validate image URLs if using URL method
-      if (uploadMethod === 'url') {
-        const invalidUrls = previewImages.filter(url => url && !url.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i));
-        if (invalidUrls.length > 0) {
-          errors.images = "Please provide valid image URLs (jpg, jpeg, png, gif, or webp)";
-          hasError = true;
-        }
-      }
     }
 
     // Set form errors
@@ -3747,10 +3698,13 @@ function ProductManagementPage() {
     const { name, value } = e.target;
     
     if (name === 'price') {
-      setFormData({
-        ...formData,
-        [name]: value === '' ? '' : parseFloat(value)
-      });
+      // Only allow numeric input with up to 2 decimal places for price
+      if (value === '' || /^\d+(\.\d{0,2})?$/.test(value)) {
+        setFormData({
+          ...formData,
+          [name]: value
+        });
+      }
     } else {
       setFormData({
         ...formData,
@@ -3763,31 +3717,6 @@ function ProductManagementPage() {
       setFormErrors({
         ...formErrors,
         [name]: null
-      });
-    }
-  };
-
-  const handleImageUrlChange = (value) => {
-    // Split multiple URLs by newline or space only (not commas)
-    const urls = value.split(/[\n\s]+/).filter(url => url.trim());
-    
-    // Limit to max 4 images
-    const limitedUrls = urls.slice(0, 4);
-    
-    // Update preview images
-    setPreviewImages(limitedUrls);
-    
-    // Store joined with bar as delimiter
-    setFormData({
-      ...formData,
-      image_path: limitedUrls.join('|')
-    });
-    
-    // Clear error when image is updated
-    if (formErrors.images) {
-      setFormErrors({
-        ...formErrors,
-        images: null
       });
     }
   };
@@ -3870,6 +3799,18 @@ function ProductManagementPage() {
       };
       
       reader.readAsDataURL(file);
+    });
+  };
+
+  const removeImage = (index) => {
+    const updatedPreviews = [...previewImages];
+    updatedPreviews.splice(index, 1);
+    setPreviewImages(updatedPreviews);
+    
+    // Update formData.image_path with pipe delimiter
+    setFormData({
+      ...formData,
+      image_path: updatedPreviews.join('|')
     });
   };
 
@@ -4171,79 +4112,55 @@ function ProductManagementPage() {
               <div className="form-group">
                 <label>Product Image*</label>
                 
-                <div className="upload-options">
-                  <button 
-                    type="button" 
-                    className={`upload-option-btn ${uploadMethod === 'url' ? 'active' : ''}`}
-                    onClick={() => setUploadMethod('url')}
-                  >
-                    Use URL
-                  </button>
-                  <button 
-                    type="button" 
-                    className={`upload-option-btn ${uploadMethod === 'file' ? 'active' : ''}`}
-                    onClick={() => setUploadMethod('file')}
-                  >
-                    Upload File
-                  </button>
+                <div className="file-upload-container">
+                  <input
+                    type="file"
+                    id="image_file"
+                    accept="image/*"
+                    onChange={handleFileUpload}
+                    className="file-upload-input"
+                    multiple
+                  />
+                  <label htmlFor="image_file" className={`file-upload-label ${formErrors.images ? 'error-border' : ''}`}>
+                    {imageFile ? imageFile.name : 'Choose images (max 4)'}
+                  </label>
                 </div>
                 
-                <div className="product-image-container">
-                  {uploadMethod === 'url' ? (
-                    <textarea
-                      placeholder="Enter image URLs (one per line or space-separated, max 4)"
-                      value={previewImages.join('\n')}
-                      onChange={(e) => handleImageUrlChange(e.target.value)}
-                      className={formErrors.images ? 'error-border' : ''}
-                      rows="3"
-                    />
-                  ) : (
-                    <div className="file-upload-container">
-                      <input
-                        type="file"
-                        id="image_file"
-                        accept="image/*"
-                        onChange={handleFileUpload}
-                        className="file-upload-input"
-                        multiple
-                      />
-                      <label htmlFor="image_file" className={`file-upload-label ${formErrors.images ? 'error-border' : ''}`}>
-                        {imageFile ? imageFile.name : 'Choose images (max 4)'}
-                      </label>
-                    </div>
-                  )}
-                  
-                  {previewImages.length > 0 && (
-                    <div className="image-previews-grid">
-                      {previewImages.map((image, index) => (
-                        <div key={index} className="image-preview-item">
-                          <img src={image} alt={`Product preview ${index + 1}`} />
-                          <button 
-                            type="button" 
-                            className="remove-image-btn"
-                            onClick={() => {
-                              const updatedPreviews = [...previewImages];
-                              updatedPreviews.splice(index, 1);
-                              setPreviewImages(updatedPreviews);
-                              setFormData({
-                                ...formData,
-                                image_path: updatedPreviews.join('|')
-                              });
-                            }}
-                          >
-                            ×
-                          </button>
+                {previewImages.length > 0 && (
+                  <div className="image-previews">
+                    {previewImages.map((image, index) => (
+                      <div key={index} className="image-preview-item">
+                        <img src={image} alt={`Product preview ${index + 1}`} />
+                        <button 
+                          type="button" 
+                          className="remove-image"
+                          onClick={() => removeImage(index)}
+                          aria-label={`Remove image ${index + 1}`}
+                        >
+                          ×
+                        </button>
+                        <div className="image-preview-count">
+                          {index + 1}/{previewImages.length}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                  
-                  {previewImages.length === 0 && (
-                    <div className="image-preview empty">
-                      <span>No preview</span>
-                    </div>
-                  )}
-                </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {previewImages.length > 0 && (
+                  <div className="image-upload-status">
+                    <span>{previewImages.length} of 4 images added</span>
+                    {previewImages.length === 4 && (
+                      <span className="max-reached">Maximum reached</span>
+                    )}
+                  </div>
+                )}
+                
+                {previewImages.length === 0 && (
+                  <div className="image-preview empty">
+                    <span>No preview</span>
+                  </div>
+                )}
                 
                 {formErrors.images && <div className="form-error">{formErrors.images}</div>}
               </div>

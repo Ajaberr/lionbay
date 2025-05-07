@@ -11,6 +11,15 @@ function HomePage() {
   const [featuredProducts, setFeaturedProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   
+  // Helper function to get the first image from a pipe-delimited string
+  const getFirstImage = (imagePath) => {
+    if (!imagePath) return "/api/placeholder/300/300";
+    
+    // Split by pipe symbol and get the first image URL
+    const images = imagePath.split('|').filter(img => img.trim());
+    return images.length > 0 ? images[0] : imagePath || "/api/placeholder/300/300";
+  };
+
   useEffect(() => {
     // Apply fade-in animations to elements as they scroll into view
     const observer = new IntersectionObserver((entries) => {
@@ -141,7 +150,7 @@ function HomePage() {
                   <div className="product-card">
                     <div className="product-image">
                       {product.image_path ? (
-                        <img src={product.image_path} alt={product.name} />
+                        <img src={getFirstImage(product.image_path)} alt={product.name} />
                       ) : (
                         <div className="placeholder-image">No Image</div>
                       )}
@@ -153,9 +162,6 @@ function HomePage() {
                         <p>Category: {product.category}</p>
                       </div>
                       <div className="product-price">${parseFloat(product.price).toFixed(2)}</div>
-                    </div>
-                    <div className="product-warning">
-                      If you think this product violates terms of service, please contact support using the help button.
                     </div>
                   </div>
                 </Link>
