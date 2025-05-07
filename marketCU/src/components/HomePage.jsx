@@ -154,6 +154,9 @@ function HomePage() {
                       </div>
                       <div className="product-price">${parseFloat(product.price).toFixed(2)}</div>
                     </div>
+                    <div className="product-warning">
+                      If you think this product violates terms of service, please contact support using the help button.
+                    </div>
                   </div>
                 </Link>
               ))}

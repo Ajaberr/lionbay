@@ -1348,8 +1348,12 @@ function ProductDetailPage() {
           </div>
           
           <div className="product-detail-description">
-            <h3>Details</h3>
+            <h3>Description</h3>
             <p>{product.details}</p>
+          </div>
+          
+          <div className="product-warning">
+            If you think this product violates terms of service, please contact support using the help button in the bottom right of the page.
           </div>
           
           {isOwner ? (
