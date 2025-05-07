@@ -123,7 +123,7 @@ function HomePage() {
               <div className="step-number">4</div>
             </div>
             <h3>Quick Transactions</h3>
-            <p>Meet in person, inspect items, and complete your transaction right away.</p>
+            <p>Meet in person, exchange items & payment. Buyer confirms, seller verifies. Like rideshare apps!</p>
           </div>
         </div>
       </section>

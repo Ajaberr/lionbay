@@ -2444,7 +2444,9 @@ function ChatsListPage() {
         <div className="modal-overlay">
           <div className="modal-content">
             <h3>Complete Payment</h3>
-            <p>Mark this transaction as paid in person? This action cannot be undone.</p>
+            <p>{currentUser?.userId === chats.find(c => c.id === chatToComplete)?.seller_id 
+              ? "Confirm that you've received payment from the buyer in person. This will mark the deal as complete and remove the item from the marketplace." 
+              : "Confirm that you've made the payment to the seller in person. This will notify the seller to complete the deal."}</p>
             <div className="modal-actions">
               <button 
                 className="modal-btn cancel" 
@@ -3281,7 +3283,7 @@ function SiteFooter() {
         </div>
       </div>
       <div className="footer-bottom">
-        <p>&copy; {new Date().getFullYear()} Lion Bay. Better, faster, closer than those other guys.</p>
+        <p>&copy; {new Date().getFullYear()} Lion Bay. Better, faster, where campus connections happen.</p>
       </div>
     </footer>
   );
