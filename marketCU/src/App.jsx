@@ -1663,6 +1663,15 @@ function CreateProductPage() {
         return;
       }
 
+      // Validate if "Other" category is selected but not specified
+      if (formData.category === 'Other' && !formData.other_category.trim()) {
+        setToastMessage('Please specify your category when \'Other\' is selected.');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
+      }
+
       // Validate images
       const hasImages = previewImages.length > 0;
       if (!hasImages) {
@@ -1780,7 +1789,7 @@ function CreateProductPage() {
         details: formData.details.trim(),
         condition: formData.condition,
         price: priceValue,
-        category: formData.category,
+        category: formData.category === 'Other' ? formData.other_category.trim() : formData.category,
         image_path: imagePathString
       };
       
@@ -1892,8 +1901,23 @@ function CreateProductPage() {
               <option value="Furniture & Storage">Furniture & Storage</option>
               <option value="Clothing & Fashion">Clothing & Fashion</option>
               <option value="School Supplies">School Supplies</option>
+              <option value="Other">Other</option>
             </select>
           </div>
+          
+          {formData.category === 'Other' && (
+            <div className="form-group">
+              <label htmlFor="other_category">Specify Category</label>
+              <input
+                type="text"
+                id="other_category"
+                name="other_category"
+                value={formData.other_category}
+                onChange={handleChange}
+                placeholder="Enter custom category"
+              />
+            </div>
+          )}
           
           <div className="form-group">
             <label htmlFor="details">Details</label>

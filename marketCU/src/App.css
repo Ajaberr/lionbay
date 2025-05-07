@@ -4932,3 +4932,139 @@ html {
 .product-warning a:hover {
   text-decoration: none;
 }
+
+/* --- Enhanced Filter Sidebar and Category Styles --- */
+
+/* Make the entire market content area use flexbox for responsiveness */
+.market-content {
+  display: flex;
+  flex-wrap: wrap; /* Allow sidebar and product grid to wrap on small screens */
+  gap: 20px; /* Space between sidebar and product grid */
+}
+
+.filters-sidebar {
+  width: 280px; /* Slightly wider default */
+  padding: 20px;
+  background-color: #fdfdff; /* Slightly cleaner background */
+  border-right: 1px solid var(--border-color);
+  flex-shrink: 0; /* Prevent sidebar from shrinking too much */
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  align-self: flex-start; /* Align to top if content wraps */
+  /* Ensure original height properties are considered or overridden if needed */
+}
+
+.filter-section {
+  margin-bottom: 30px;
+}
+
+.filter-header {
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e9ecef; /* Lighter separator */
+}
+
+.filter-header h3 {
+  margin: 0;
+  font-size: 1.2rem; /* Clearer section titles */
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+/* This replaces/targets the div that had className="gender-options" */
+.category-options {
+  display: flex;
+  flex-direction: column; /* Default to vertical stacking */
+  gap: 12px; /* Increased gap for better touch targets */
+}
+
+.filter-option {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px; /* Add padding for better click/touch area */
+  border-radius: 6px;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+  /* Remove margin-bottom if gap in .category-options handles spacing */
+}
+
+.filter-option:hover {
+  background-color: #f0f4ff; /* Subtle hover effect */
+}
+
+.filter-option input[type="checkbox"] {
+  width: 20px; /* Larger checkbox */
+  height: 20px;
+  accent-color: var(--primary-color);
+  margin-right: 10px; /* More space next to label */
+  flex-shrink: 0; /* Prevent checkbox from shrinking */
+}
+
+.filter-option label {
+  flex-grow: 1; /* Allow label to take available space */
+  font-size: 1rem;
+  color: #343a40; /* Good contrast */
+  cursor: pointer;
+  line-height: 1.4;
+  /* Remove margin-left if checkbox margin-right is sufficient */
+}
+
+.filter-option input[type="checkbox"]:checked + label {
+  color: var(--primary-color);
+  font-weight: 600; /* Highlight selected category */
+}
+
+/* --- Responsive adjustments for filters --- */
+
+/* Medium screens (e.g., tablets) - sidebar remains, categories might still stack */
+@media (max-width: 992px) {
+  .filters-sidebar {
+    width: 240px; /* Slightly narrower sidebar */
+  }
+  /* .market-content adjustments if needed, but default flex row should be fine */
+}
+
+/* Small screens (e.g., mobile phones) */
+@media (max-width: 767px) {
+  .market-content {
+    flex-direction: column; /* Stack sidebar on top of products grid */
+  }
+
+  .filters-sidebar {
+    width: 100%; /* Sidebar takes full width */
+    border-right: none; /* Remove border when stacked */
+    margin-bottom: 20px; /* Space below sidebar */
+    height: auto; /* Adjust height */
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+  }
+
+  .filter-header h3 {
+    font-size: 1.1rem;
+  }
+
+  /* For category options on mobile, allow them to wrap if needed, or scroll */
+  .category-options {
+    flex-direction: row; /* Allow categories to sit side-by-side */
+    flex-wrap: wrap;     /* Wrap categories to next line if they don't fit */
+    gap: 8px;          /* Adjust gap for wrapped items */
+  }
+
+  .filter-option {
+    /* Adjust styling for wrapped items if necessary, e.g., make them more button-like */
+    padding: 8px 10px;
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    flex-basis: calc(50% - 4px); /* Two items per row, accounting for gap */
+    box-sizing: border-box; /* Ensure padding/border are included in width calc */
+  }
+
+  .filter-option label {
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .filter-option {
+     flex-basis: 100%; /* One item per row on very small screens */
+  }
+}
