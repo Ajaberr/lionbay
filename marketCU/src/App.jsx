@@ -1413,6 +1413,7 @@ function CreateProductPage() {
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadMethod, setUploadMethod] = useState('url'); // 'url' or 'file'
+  const [termsAgreed, setTermsAgreed] = useState(false);
   
   // Toast notification state
   const [showToast, setShowToast] = useState(false);
@@ -1490,8 +1491,8 @@ function CreateProductPage() {
   };
 
   const handleImageUrlChange = (value) => {
-    // Split multiple URLs by newline, comma, or space
-    const urls = value.split(/[\n,\s]+/).filter(url => url.trim());
+    // Split multiple URLs by newline or space only (not commas)
+    const urls = value.split(/[\n\s]+/).filter(url => url.trim());
     
     // Limit to max 4 images
     const limitedUrls = urls.slice(0, 4);
@@ -1632,6 +1633,15 @@ function CreateProductPage() {
     setImageError('');
 
     try {
+      // Check if terms agreement is checked
+      if (!termsAgreed) {
+        setToastMessage('You must agree to the terms of use to list an item');
+        setToastType('error');
+        setShowToast(true);
+        setIsSubmitting(false);
+        return;
+      }
+      
       // Required field checks
       if (!formData.category) {
         setToastMessage('Category is required');
@@ -1922,11 +1932,11 @@ function CreateProductPage() {
               <div>
                 <textarea
                   id="image_urls"
-                  placeholder="Enter image URLs (one per line or comma-separated)"
+                  placeholder="Enter image URLs (one per line or space-separated)"
                   onChange={(e) => handleImageUrlChange(e.target.value)}
                   rows="3"
                 ></textarea>
-                <small>Enter up to 4 image URLs, separated by line breaks or commas</small>
+                <small>Enter up to 4 image URLs, separated by line breaks or spaces</small>
               </div>
             ) : (
               <div className="file-upload-container">
@@ -1970,6 +1980,35 @@ function CreateProductPage() {
                 ))}
               </div>
             )}
+          </div>
+          
+          <div className="terms-of-use-box">
+            <h4>Terms of Use Agreement</h4>
+            <p>By listing an item for sale, you agree to comply with the LionBay marketplace rules. Listing inappropriate products, illegal items, or violating university policies may result in:</p>
+            <ul>
+              <li>Immediate removal of your listing</li>
+              <li>Suspension or termination of your account</li>
+              <li>Reporting to your university administration based on your institutional email</li>
+              <li>Potential legal action for illegal activities</li>
+            </ul>
+            <p>LionBay reserves the right to review all listings and take appropriate action against policy violations.</p>
+            <div className="terms-checkbox-container">
+              <input
+                type="checkbox"
+                id="terms-agreement"
+                required
+                checked={termsAgreed}
+                onChange={(e) => {
+                  setTermsAgreed(e.target.checked);
+                  if (!e.target.checked) {
+                    setToastMessage("You must agree to the terms to list an item");
+                    setToastType("error");
+                    setShowToast(true);
+                  }
+                }}
+              />
+              <label htmlFor="terms-agreement">I agree to the LionBay marketplace terms and policies</label>
+            </div>
           </div>
           
           <button 
@@ -3699,8 +3738,8 @@ function ProductManagementPage() {
   };
 
   const handleImageUrlChange = (value) => {
-    // Split multiple URLs by newline, comma, or space
-    const urls = value.split(/[\n,\s]+/).filter(url => url.trim());
+    // Split multiple URLs by newline or space only (not commas)
+    const urls = value.split(/[\n\s]+/).filter(url => url.trim());
     
     // Limit to max 4 images
     const limitedUrls = urls.slice(0, 4);
@@ -4122,7 +4161,7 @@ function ProductManagementPage() {
                 <div className="product-image-container">
                   {uploadMethod === 'url' ? (
                     <textarea
-                      placeholder="Enter image URLs (one per line or comma-separated, max 4)"
+                      placeholder="Enter image URLs (one per line or space-separated, max 4)"
                       value={previewImages.join('\n')}
                       onChange={(e) => handleImageUrlChange(e.target.value)}
                       className={formErrors.images ? 'error-border' : ''}

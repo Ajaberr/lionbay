@@ -516,7 +516,9 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
                 <p>User with email ${buyerEmail} has contacted you about this item.</p>
                 <p>Please log in to Lion Bay to respond to their message.</p>
                 <div style="margin-top: 20px; text-align: center;">
-                  <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/chats/${chat.id}" 
+                  <a href="${process.env.NODE_ENV === 'production' 
+                    ? (process.env.FRONTEND_URL || 'https://lionbay.org')  
+                    : 'http://localhost:3000'}/chats/${chat.id}" 
                      style="background-color: #1c4587; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block;">
                     View Messages
                   </a>
