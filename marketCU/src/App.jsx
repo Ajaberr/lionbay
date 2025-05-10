@@ -4072,7 +4072,7 @@ function ProductManagementPage() {
       name: product.name,
       details: product.details,
       condition: product.condition,
-      price: product.price,
+      price: product.price.toString(), // Convert price to string for input field
       category: product.category,
       image_path: product.image_path,
       other_category: product.category === 'Other' ? product.custom_category || '' : ''
@@ -4113,7 +4113,7 @@ function ProductManagementPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('ProductManagementPage form submission started'); // Add log to track form submission
+    console.log('ProductManagementPage form submission started');
     
     if (!validateForm()) {
       setToastMessage("Please fix form errors before submitting");
@@ -4141,6 +4141,9 @@ function ProductManagementPage() {
         setShowToast(true);
         return;
       }
+
+      // Create image path string from preview images
+      const imagePathString = previewImages.join('|');
       
       const productData = {
         name: formData.name.trim(),
@@ -4148,7 +4151,7 @@ function ProductManagementPage() {
         condition: formData.condition,
         price: priceValue,
         category: finalCategory,
-        image_path: formData.image_path
+        image_path: imagePathString
       };
       
       console.log('Sending product data:', productData);
