@@ -332,10 +332,13 @@ app.put('/api/products/:id', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'All fields including image are required' });
     }
 
-    // Validate image URL format
-    if (!image_path.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) && 
-        !image_path.startsWith('data:image/')) {
-      return res.status(400).json({ error: 'Invalid image format. Please provide a valid image URL or base64 data' });
+    // Validate image paths (can be multiple images separated by |)
+    const imagePaths = image_path.split('|');
+    for (const path of imagePaths) {
+      if (!path.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) && 
+          !path.startsWith('data:image/')) {
+        return res.status(400).json({ error: 'Invalid image format. Please provide valid image URLs or base64 data' });
+      }
     }
     
     // First check if product exists and user is the seller
