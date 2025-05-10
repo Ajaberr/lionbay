@@ -425,51 +425,10 @@ app.delete('/api/products/:id', authenticateToken, async (req, res) => {
 // Chat and messages API
 app.post('/api/chats', authenticateToken, async (req, res) => {
   try {
-    const { product_id, seller_id } = req.body;
-    const buyer_id = req.user.userId;
+    const { product_id, buyer_id, seller_id } = req.body;
+    const finalSellerId = seller_id;
     
-    console.log(`Creating chat for product: ${product_id}, seller: ${seller_id}, buyer: ${buyer_id}`);
-    
-    if (!product_id) {
-      return res.status(400).json({ error: 'Product ID is required' });
-    }
-    
-    // If no seller_id provided, fetch it from the product
-    let finalSellerId = seller_id;
-    let productName = '';
-    if (!finalSellerId) {
-      console.log('No seller_id provided, fetching from product');
-      const productResult = await pool.query(
-        'SELECT seller_id, name FROM products WHERE id = $1',
-        [product_id]
-      );
-      
-      if (productResult.rows.length === 0) {
-        return res.status(404).json({ error: 'Product not found' });
-      }
-      
-      finalSellerId = productResult.rows[0].seller_id;
-      productName = productResult.rows[0].name;
-      console.log(`Fetched seller_id: ${finalSellerId} from product`);
-    } else {
-      // Get product name for email
-      const productResult = await pool.query(
-        'SELECT name FROM products WHERE id = $1',
-        [product_id]
-      );
-      
-      if (productResult.rows.length > 0) {
-        productName = productResult.rows[0].name;
-      }
-    }
-    
-    // Don't allow chats with yourself
-    if (finalSellerId === buyer_id) {
-      return res.status(400).json({ error: 'Cannot create chat with yourself' });
-    }
-    
-    // Check if chat already exists
-    console.log(`Checking for existing chat with product: ${product_id}, buyer: ${buyer_id}, seller: ${finalSellerId}`);
+    // Check for existing chat
     const existingChatResult = await pool.query(
       'SELECT * FROM chats WHERE product_id = $1 AND buyer_id = $2 AND seller_id = $3',
       [product_id, buyer_id, finalSellerId]
@@ -480,14 +439,77 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
     if (existingChatResult.rows.length > 0) {
       console.log('Existing chat found:', existingChatResult.rows[0].id);
       chat = existingChatResult.rows[0];
+      
+      // Check for messages in the last 10 minutes
+      const recentMessagesResult = await pool.query(
+        'SELECT COUNT(*) FROM messages WHERE chat_id = $1 AND created_at > NOW() - INTERVAL \'10 minutes\'',
+        [chat.id]
+      );
+      
+      const hasRecentMessages = parseInt(recentMessagesResult.rows[0].count) > 0;
+      
+      if (!hasRecentMessages) {
+        // Get buyer and seller email addresses for notification
+        const usersResult = await pool.query(
+          'SELECT id, email FROM users WHERE id IN ($1, $2)',
+          [buyer_id, finalSellerId]
+        );
+        
+        const users = usersResult.rows.reduce((acc, user) => {
+          acc[user.id] = user.email;
+          return acc;
+        }, {});
+        
+        const buyerEmail = users[buyer_id];
+        const sellerEmail = users[finalSellerId];
+        
+        // Get product name for the email
+        const productResult = await pool.query(
+          'SELECT name FROM products WHERE id = $1',
+          [product_id]
+        );
+        const productName = productResult.rows[0]?.name || 'the product';
+        
+        // Send email notification to seller about new buyer interest
+        if (sellerEmail && process.env.EMAIL_USER) {
+          try {
+            await transporter.sendMail({
+              from: `"Lion Bay" <${process.env.EMAIL_USER}>`,
+              to: sellerEmail,
+              subject: `New Interest in Your Product: ${productName}`,
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                  <h1 style="color: #1c4587;">Lion Bay</h1>
+                  <p>Good news! A buyer is interested in your product "${productName}".</p>
+                  <p>User with email ${buyerEmail} has contacted you about this item.</p>
+                  <p>Please log in to Lion Bay to respond to their message.</p>
+                  <div style="margin-top: 20px; text-align: center;">
+                    <a href="${process.env.NODE_ENV === 'production' 
+                      ? (process.env.FRONTEND_URL || 'https://lionbay.org')  
+                      : 'http://localhost:3000'}/chats/${chat.id}" 
+                       style="background-color: #1c4587; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block;">
+                      View Messages
+                    </a>
+                  </div>
+                </div>
+              `
+            });
+            
+            console.log(`Notification email sent to seller ${sellerEmail}`);
+          } catch (emailError) {
+            console.error('Error sending seller notification email:', emailError);
+            // Continue even if email fails
+          }
+        }
+      }
     } else {
-    // Create new chat
-    console.log('Creating new chat');
-    const newChatResult = await pool.query(
-      'INSERT INTO chats (product_id, buyer_id, seller_id) VALUES ($1, $2, $3) RETURNING *',
-      [product_id, buyer_id, finalSellerId]
-    );
-    
+      // Create new chat
+      console.log('Creating new chat');
+      const newChatResult = await pool.query(
+        'INSERT INTO chats (product_id, buyer_id, seller_id) VALUES ($1, $2, $3) RETURNING *',
+        [product_id, buyer_id, finalSellerId]
+      );
+      
       chat = newChatResult.rows[0];
       console.log('New chat created:', chat.id);
       
@@ -504,6 +526,13 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
       
       const buyerEmail = users[buyer_id];
       const sellerEmail = users[finalSellerId];
+      
+      // Get product name for the email
+      const productResult = await pool.query(
+        'SELECT name FROM products WHERE id = $1',
+        [product_id]
+      );
+      const productName = productResult.rows[0]?.name || 'the product';
       
       // Send email notification to seller about new buyer interest
       if (sellerEmail && process.env.EMAIL_USER) {
@@ -1007,6 +1036,65 @@ app.post('/api/chats/:id/messages', authenticateToken, async (req, res) => {
       ...newMessageResult.rows[0],
       sender_email: senderResult.rows[0].email
     };
+    
+    // Check for messages in the last 10 minutes, EXCLUDING the message we just created
+    const recentMessagesResult = await pool.query(
+      'SELECT COUNT(*) FROM messages WHERE chat_id = $1 AND created_at > NOW() - INTERVAL \'10 minutes\' AND id != $2',
+      [chat_id, newMessage.id]
+    );
+    
+    const hasRecentMessages = parseInt(recentMessagesResult.rows[0].count) > 0;
+    
+    // If there are NO recent messages, send email notification
+    if (!hasRecentMessages) {
+      // Get the recipient's email (the other participant in the chat)
+      const recipientId = sender_id === chat.buyer_id ? chat.seller_id : chat.buyer_id;
+      const recipientResult = await pool.query(
+        'SELECT email FROM users WHERE id = $1',
+        [recipientId]
+      );
+      
+      if (recipientResult.rows.length > 0 && process.env.EMAIL_USER) {
+        const recipientEmail = recipientResult.rows[0].email;
+        const senderEmail = senderResult.rows[0].email;
+        
+        // Get product name for the email
+        const productResult = await pool.query(
+          'SELECT name FROM products WHERE id = $1',
+          [chat.product_id]
+        );
+        const productName = productResult.rows[0]?.name || 'the product';
+        
+        try {
+          await transporter.sendMail({
+            from: `"Lion Bay" <${process.env.EMAIL_USER}>`,
+            to: recipientEmail,
+            subject: `New Message About: ${productName}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h1 style="color: #1c4587;">Lion Bay</h1>
+                <p>You have received a new message about "${productName}".</p>
+                <p>From: ${senderEmail}</p>
+                <p>Message: "${content}"</p>
+                <div style="margin-top: 20px; text-align: center;">
+                  <a href="${process.env.NODE_ENV === 'production' 
+                    ? (process.env.FRONTEND_URL || 'https://lionbay.org')  
+                    : 'http://localhost:3000'}/chats/${chat_id}" 
+                     style="background-color: #1c4587; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block;">
+                    View Message
+                  </a>
+                </div>
+              </div>
+            `
+          });
+          
+          console.log(`Message notification email sent to ${recipientEmail}`);
+        } catch (emailError) {
+          console.error('Error sending message notification email:', emailError);
+          // Continue even if email fails
+        }
+      }
+    }
     
     // Emit new message event to socket
     io.to(chat_id).emit('new_message', newMessage);
