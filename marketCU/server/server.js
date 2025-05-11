@@ -427,11 +427,21 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
   try {
     const { product_id, buyer_id, seller_id } = req.body;
     const finalSellerId = seller_id;
+    const finalBuyerId = buyer_id || req.user.userId; // Use authenticated user as buyer if not specified
+    
+    if (!product_id || !finalSellerId) {
+      return res.status(400).json({ error: 'Product ID and seller ID are required' });
+    }
+    
+    // Ensure buyer is not the same as seller
+    if (finalBuyerId === finalSellerId) {
+      return res.status(400).json({ error: 'Buyer and seller cannot be the same user' });
+    }
     
     // Check for existing chat
     const existingChatResult = await pool.query(
       'SELECT * FROM chats WHERE product_id = $1 AND buyer_id = $2 AND seller_id = $3',
-      [product_id, buyer_id, finalSellerId]
+      [product_id, finalBuyerId, finalSellerId]
     );
     
     let chat;
@@ -451,8 +461,8 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
       if (!hasRecentMessages) {
         // Get buyer and seller email addresses for notification
         const usersResult = await pool.query(
-          'SELECT id, email FROM users WHERE id IN ($1, $2)',
-          [buyer_id, finalSellerId]
+          'SELECT id, email FROM users WHERE id = $1 OR id = $2',
+          [finalBuyerId, finalSellerId]
         );
         
         const users = usersResult.rows.reduce((acc, user) => {
@@ -460,7 +470,7 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
           return acc;
         }, {});
         
-        const buyerEmail = users[buyer_id];
+        const buyerEmail = users[finalBuyerId];
         const sellerEmail = users[finalSellerId];
         
         // Get product name for the email
@@ -504,10 +514,10 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
       }
     } else {
       // Create new chat
-      console.log('Creating new chat');
+      console.log('Creating new chat for buyer:', finalBuyerId, 'seller:', finalSellerId, 'product:', product_id);
       const newChatResult = await pool.query(
         'INSERT INTO chats (product_id, buyer_id, seller_id) VALUES ($1, $2, $3) RETURNING *',
-        [product_id, buyer_id, finalSellerId]
+        [product_id, finalBuyerId, finalSellerId]
       );
       
       chat = newChatResult.rows[0];
@@ -515,8 +525,8 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
       
       // Get buyer and seller email addresses for notification
       const usersResult = await pool.query(
-        'SELECT id, email FROM users WHERE id IN ($1, $2)',
-        [buyer_id, finalSellerId]
+        'SELECT id, email FROM users WHERE id = $1 OR id = $2',
+        [finalBuyerId, finalSellerId]
       );
       
       const users = usersResult.rows.reduce((acc, user) => {
@@ -524,7 +534,7 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
         return acc;
       }, {});
       
-      const buyerEmail = users[buyer_id];
+      const buyerEmail = users[finalBuyerId];
       const sellerEmail = users[finalSellerId];
       
       // Get product name for the email
