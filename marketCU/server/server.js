@@ -226,8 +226,9 @@ const checkAdmin = (email) => {
 // Products API
 app.get('/api/products', async (req, res) => {
   try {
-    // Extract query parameters if they exist
-    const { exclude, categories, seller_id } = req.query;
+    // Extract query parameters
+    const { exclude, categories, seller_id, page = 1, limit = 12 } = req.query;
+    const offset = (page - 1) * limit;
     
     // Build base query
     let query = 'SELECT p.*, u.email as seller_email FROM products p JOIN users u ON p.seller_id = u.id';
@@ -263,8 +264,9 @@ app.get('/api/products', async (req, res) => {
       query += ` WHERE ${conditions.join(' AND ')}`;
     }
     
-    // Add ordering
-    query += ' ORDER BY p.created_at DESC';
+    // Add ordering and pagination
+    query += ' ORDER BY p.created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
+    params.push(limit, offset);
     
     // Execute the query
     const productsResult = await pool.query(query, params);

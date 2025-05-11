@@ -1036,50 +1036,73 @@ function MarketPage() {
   const [visibleCategories, setVisibleCategories] = useState(PRODUCT_CATEGORIES);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showFiltersMobile, setShowFiltersMobile] = useState(false);
-  const [selectedCondition, setSelectedCondition] = useState('all');
+  const [selectedConditions, setSelectedConditions] = useState([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const filterRef = useRef(null);
-  
-  // Handle closing the filters when clicking outside
+  const observerRef = useRef(null);
+  const lastProductRef = useRef(null);
+
+  // Intersection Observer for infinite scroll
   useEffect(() => {
-    function handleClickOutside(event) {
-      if (filterRef.current && !filterRef.current.contains(event.target)) {
-        setShowFilters(false);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
+          loadMoreProducts();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (lastProductRef.current) {
+      observer.observe(lastProductRef.current);
+    }
+
+    observerRef.current = observer;
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
       }
-    }
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, []);
+  }, [hasMore, isLoadingMore]);
 
-  // Handle body scroll lock when filter sidebar is open on mobile
-  useEffect(() => {
-    if (showFiltersMobile) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
+  const loadMoreProducts = async () => {
+    if (isLoadingMore) return;
+    
+    setIsLoadingMore(true);
+    try {
+      const response = await authAxios.get(`/products?page=${page + 1}&limit=12`);
+      const newProducts = response.data;
+      
+      if (newProducts.length === 0) {
+        setHasMore(false);
+      } else {
+        setProducts(prev => [...prev, ...newProducts]);
+        setPage(prev => prev + 1);
+      }
+    } catch (err) {
+      console.error('Error loading more products:', err);
+    } finally {
+      setIsLoadingMore(false);
     }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [showFiltersMobile]);
+  };
 
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const response = await authAxios.get('/products');
-        // Sort products by creation date, newest first
-        const sortedProducts = response.data.sort((a, b) => 
-          new Date(b.created_at) - new Date(a.created_at)
-        );
-        setProducts(sortedProducts);
-
+        setLoading(true);
+        const response = await authAxios.get('/products?page=1&limit=12');
+        setProducts(response.data);
+        
         // Find the highest price among products
-        const highestPrice = Math.max(...sortedProducts.map(p => p.price));
-        const roundedHighestPrice = Math.ceil(highestPrice / 100) * 100; // Round to nearest hundred
+        const highestPrice = Math.max(...response.data.map(p => p.price));
+        const roundedHighestPrice = Math.ceil(highestPrice / 100) * 100;
         setMaxPrice(roundedHighestPrice);
         setPriceRange([0, roundedHighestPrice]);
+        
+        setHasMore(response.data.length === 12);
       } catch (err) {
         console.error('Error fetching products:', err);
         setError('Failed to load products. Please try again later.');
@@ -1090,9 +1113,12 @@ function MarketPage() {
 
     document.title = "Lion Bay | Columbia University Marketplace";
     fetchProducts();
-    const interval = setInterval(fetchProducts, 60000); // Refresh every minute
-    return () => clearInterval(interval);
   }, [authAxios]);
+
+  // Optimize image loading
+  const handleImageLoad = (e) => {
+    e.target.classList.add('loaded');
+  };
 
   // Filter functions
   const handleCategoryChange = (category) => {
@@ -1104,7 +1130,11 @@ function MarketPage() {
   };
 
   const handleConditionChange = (condition) => {
-    setSelectedCondition(condition);
+    setSelectedConditions((prev) =>
+      prev.includes(condition)
+        ? prev.filter((c) => c !== condition)
+        : [...prev, condition]
+    );
   };
 
   const handlePriceChange = (event, index) => {
@@ -1126,7 +1156,7 @@ function MarketPage() {
     setSelectedCategories([]);
     setPriceRange([0, maxPrice]);
     setSearchQuery('');
-    setSelectedCondition('all');
+    setSelectedConditions([]);
     setSortBy('newest');
   };
 
@@ -1265,7 +1295,7 @@ function MarketPage() {
   const filteredProducts = products.filter(product => {
     const matchesCategory = selectedCategories.length === 0 || selectedCategories.includes(product.category);
     const matchesPrice = product.price >= priceRange[0] && product.price <= priceRange[1];
-    const matchesCondition = selectedCondition === 'all' || product.condition === selectedCondition;
+    const matchesCondition = selectedConditions.length === 0 || selectedConditions.includes(product.condition);
     const matchesSearch = !searchQuery || semanticSearchMatch(product, searchQuery);
     
     return matchesCategory && matchesPrice && matchesSearch && matchesCondition;
@@ -1334,13 +1364,10 @@ function MarketPage() {
         {/* Filter and product section */}
         <div className="market-content">
           {/* Mobile filter toggle */}
-          <div className="mobile-filter-toggle">
+          <div className={`mobile-filter-toggle${showFiltersMobile ? ' fixed-above-sidebar' : ''}`}>
             <button onClick={() => setShowFiltersMobile(!showFiltersMobile)}>
               <i className="fas fa-filter"></i> {showFiltersMobile ? 'Hide Filters' : 'Show Filters'}
             </button>
-            <div className="product-count">
-              <span>{filteredProducts.length} products</span>
-            </div>
           </div>
 
           {/* Filter overlay for mobile */}
@@ -1348,21 +1375,15 @@ function MarketPage() {
             <div className="filter-overlay" onClick={() => setShowFiltersMobile(false)}></div>
           )}
 
-          {/* Filters sidebar */}
-          <div className={`filters-sidebar ${showFiltersMobile ? 'show' : ''}`} ref={filterRef}>
+          {/* Filters Sidebar */}
+          <div className={`filters-sidebar ${showFiltersMobile ? 'show' : ''}`}>
             <div className="filter-header">
               <h2>Filters</h2>
               <div className="filter-header-actions">
-                {(selectedCategories.length > 0 || selectedCondition !== 'all' || 
-                  priceRange[0] > 0 || priceRange[1] < maxPrice || searchQuery) && (
-                  <button className="clear-filters-btn" onClick={clearFilters}>
-                    Clear All
-                  </button>
-                )}
-                <button 
-                  className="close-filters-btn" 
-                  onClick={() => setShowFiltersMobile(false)}
-                >
+                <button className="clear-filters-btn" onClick={clearFilters}>
+                  Clear All
+                </button>
+                <button className="close-filters-btn" onClick={() => setShowFiltersMobile(false)}>
                   <i className="fas fa-times"></i>
                 </button>
               </div>
@@ -1372,115 +1393,63 @@ function MarketPage() {
               <div className="filter-title">
                 <h3>Price Range</h3>
               </div>
-              <div className="price-range">
-                <div className="price-inputs">
-                  <div className="price-input">
-                    <label>Min:</label>
-                    <input 
-                      type="number" 
-                      value={priceRange[0]} 
-                      onChange={(e) => handlePriceChange(e, 0)}
-                      min="0"
-                      max={priceRange[1]}
-                    />
-                  </div>
-                  <div className="price-input">
-                    <label>Max:</label>
-                    <input 
-                      type="number" 
-                      value={priceRange[1]} 
-                      onChange={(e) => handlePriceChange(e, 1)}
-                      min={priceRange[0]}
-                      max={maxPrice}
-                    />
-                  </div>
-                </div>
-                <div className="range-slider">
+              <div className="price-inputs">
+                <div className="price-input">
+                  <label>Min</label>
                   <input
-                    type="range"
-                    min="0"
-                    max={maxPrice}
+                    type="number"
                     value={priceRange[0]}
                     onChange={(e) => handlePriceChange(e, 0)}
-                    className="slider"
-                  />
-                  <input
-                    type="range"
-                    min="0"
-                    max={maxPrice}
-                    value={priceRange[1]}
-                    onChange={(e) => handlePriceChange(e, 1)}
-                    className="slider"
+                    placeholder="Min"
                   />
                 </div>
+                <div className="price-input">
+                  <label>Max</label>
+                  <input
+                    type="number"
+                    value={priceRange[1]}
+                    onChange={(e) => handlePriceChange(e, 1)}
+                    placeholder="Max"
+                  />
+                </div>
+              </div>
+              <div className="range-slider">
+                <input
+                  type="range"
+                  min="0"
+                  max={maxPrice}
+                  value={priceRange[0]}
+                  onChange={(e) => handlePriceChange(e, 0)}
+                  className="slider"
+                />
+                <input
+                  type="range"
+                  min="0"
+                  max={maxPrice}
+                  value={priceRange[1]}
+                  onChange={(e) => handlePriceChange(e, 1)}
+                  className="slider"
+                />
               </div>
             </div>
 
-            <div className="filter-section condition-filter">
+            <div className="filter-section">
               <div className="filter-title">
-                <h3>Condition</h3>
+                <h3>Categories</h3>
               </div>
-              <div className="condition-options">
-                <div className="filter-option">
-                  <input
-                    type="radio"
-                    id="condition-all"
-                    name="condition"
-                    checked={selectedCondition === 'all'}
-                    onChange={() => handleConditionChange('all')}
-                  />
-                  <label htmlFor="condition-all">All Conditions</label>
-                </div>
-                <div className="filter-option">
-                  <input
-                    type="radio"
-                    id="condition-new"
-                    name="condition"
-                    checked={selectedCondition === 'New'}
-                    onChange={() => handleConditionChange('New')}
-                  />
-                  <label htmlFor="condition-new">New</label>
-                </div>
-                <div className="filter-option">
-                  <input
-                    type="radio"
-                    id="condition-like-new"
-                    name="condition"
-                    checked={selectedCondition === 'Like New'}
-                    onChange={() => handleConditionChange('Like New')}
-                  />
-                  <label htmlFor="condition-like-new">Like New</label>
-                </div>
-                <div className="filter-option">
-                  <input
-                    type="radio"
-                    id="condition-good"
-                    name="condition"
-                    checked={selectedCondition === 'Good'}
-                    onChange={() => handleConditionChange('Good')}
-                  />
-                  <label htmlFor="condition-good">Good</label>
-                </div>
-                <div className="filter-option">
-                  <input
-                    type="radio"
-                    id="condition-fair"
-                    name="condition"
-                    checked={selectedCondition === 'Fair'}
-                    onChange={() => handleConditionChange('Fair')}
-                  />
-                  <label htmlFor="condition-fair">Fair</label>
-                </div>
+              <div className="category-options">
+                {PRODUCT_CATEGORIES.map((category) => (
+                  <div key={category} className="filter-option">
+                    <input
+                      type="checkbox"
+                      id={`category-${category}`}
+                      checked={selectedCategories.includes(category)}
+                      onChange={() => handleCategoryChange(category)}
+                    />
+                    <label htmlFor={`category-${category}`}>{category}</label>
+                  </div>
+                ))}
               </div>
-            </div>
-            
-            <div className="filter-apply-button-container">
-              <button
-                className="filter-apply-button"
-                onClick={() => setShowFiltersMobile(false)}
-              >
-                Apply Filters
-              </button>
             </div>
           </div>
           
@@ -1496,38 +1465,40 @@ function MarketPage() {
             </div>
             
             <div className="products-list">
-              {sortedProducts.length > 0 ? (
-                sortedProducts.map((product) => (
-                  <Link key={product.id} to={`/market/${product.id}`} className="product-card-link">
-                    <div className="product-card">
-                      <div className="product-image">
-                        <img 
-                          src={getFirstImage(product.image_path) || "/api/placeholder/300/300"} 
-                          alt={product.name} 
-                          loading="lazy" 
-                          onLoad={(e) => e.target.classList.add('loaded')}
-                          className="product-img"
-                        />
-                        <div className="image-loading-placeholder">
-                          <div className="loading-spinner small"></div>
-                        </div>
-                        <div className="product-badge">{product.condition}</div>
+              {sortedProducts.map((product, index) => (
+                <Link 
+                  key={product.id} 
+                  to={`/market/${product.id}`} 
+                  className="product-card-link"
+                  ref={index === sortedProducts.length - 1 ? lastProductRef : null}
+                >
+                  <div className="product-card">
+                    <div className="product-image">
+                      <img 
+                        src={getFirstImage(product.image_path) || "/api/placeholder/300/300"} 
+                        alt={product.name} 
+                        loading="lazy"
+                        onLoad={handleImageLoad}
+                        className="product-img"
+                      />
+                      <div className="image-loading-placeholder">
+                        <div className="loading-spinner small"></div>
                       </div>
-                      <div className="product-details">
-                        <div className="product-title">{product.name}</div>
-                        <div className="product-category">
-                          <span>{getCategoryIcon(product.category)}</span> {product.category}
-                        </div>
-                        <div className="product-price">${product.price.toLocaleString()}</div>
-                      </div>
+                      <div className="product-badge">{product.condition}</div>
                     </div>
-                  </Link>
-                ))
-              ) : (
-                <div className="no-products">
-                  <i className="fas fa-search"></i>
-                  <p>No products found matching your criteria.</p>
-                  <button onClick={clearFilters} className="clear-filters-btn">Clear All Filters</button>
+                    <div className="product-details">
+                      <div className="product-title">{product.name}</div>
+                      <div className="product-category">
+                        <span>{getCategoryIcon(product.category)}</span> {product.category}
+                      </div>
+                      <div className="product-price">${product.price.toLocaleString()}</div>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+              {isLoadingMore && (
+                <div className="loading-more">
+                  <div className="loading-spinner small"></div>
                 </div>
               )}
             </div>
