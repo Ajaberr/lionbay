@@ -169,4 +169,9 @@
   .contact-seller-button, .add-to-cart-button {
     width: 100%;
   }
+}
+
+.product-detail-info i {
+  color: #1c4587;
+  margin-right: 5px;
 } 

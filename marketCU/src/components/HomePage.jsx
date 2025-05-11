@@ -5,6 +5,7 @@ import axios from 'axios';
 import '../App.css';
 import DiscoverFeature from './DiscoverFeature';
 import { API_BASE_URL } from '../config';
+import { getCategoryIcon } from '../App';
 
 function HomePage() {
   const { isAuthenticated } = useAuth();
@@ -174,7 +175,18 @@ function HomePage() {
                   <div className="product-card">
                     <div className="product-image">
                       {product.image_path ? (
-                        <img src={getFirstImage(product.image_path)} alt={product.name} />
+                        <>
+                          <img 
+                            src={getFirstImage(product.image_path)} 
+                            alt={product.name} 
+                            loading="lazy" 
+                            onLoad={(e) => e.target.classList.add('loaded')}
+                            className="product-img"
+                          />
+                          <div className="image-loading-placeholder">
+                            <div className="loading-spinner small"></div>
+                          </div>
+                        </>
                       ) : (
                         <div className="placeholder-image">No Image</div>
                       )}
@@ -183,7 +195,7 @@ function HomePage() {
                       <h3 className="product-title">{product.name}</h3>
                       <div className="product-specs">
                         <p>Condition: {product.condition}</p>
-                        <p>Category: {product.category}</p>
+                        <p>Category: {getCategoryIcon(product.category)} {product.category}</p>
                       </div>
                       <div className="product-price">${parseFloat(product.price).toFixed(2)}</div>
                     </div>

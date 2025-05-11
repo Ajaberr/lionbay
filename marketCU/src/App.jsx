@@ -41,10 +41,23 @@ const getFirstImage = (imagePath) => {
 
 // Helper function to parse image paths with pipe symbols as delimiters
 const parseImagePath = (imagePath) => {
-  if (!imagePath) return "/api/placeholder/300/300";
-  // Split by pipe symbol and get the first image URL
-  const images = imagePath.split('|').filter(img => img.trim());
-  return images.length > 0 ? images[0] : imagePath || "/api/placeholder/300/300";
+  if (!imagePath) return [];
+  return imagePath.split('|').filter(img => img.trim());
+};
+
+// Export the getCategoryIcon function
+export const getCategoryIcon = (category) => {
+  switch(category) {
+    case "Laptops & Accessories": return <i className="fas fa-laptop"></i>;
+    case "Textbooks & Study Guides": return <i className="fas fa-book"></i>;
+    case "Dorm & Apartment Essentials": return <i className="fas fa-home"></i>;
+    case "Bicycles & Scooters": return <i className="fas fa-bicycle"></i>;
+    case "Electronics & Gadgets": return <i className="fas fa-plug"></i>;
+    case "Furniture & Storage": return <i className="fas fa-chair"></i>;
+    case "Clothing & Fashion": return <i className="fas fa-tshirt"></i>;
+    case "School Supplies": return <i className="fas fa-pencil-alt"></i>;
+    default: return <i className="fas fa-box"></i>;
+  }
 };
 
 // Create Auth Context
@@ -1011,14 +1024,46 @@ function SignInPage() {
 
 function MarketPage() {
   const { authAxios } = useAuth();
-  const [priceRange, setPriceRange] = useState([10, 100000]);
+  const [priceRange, setPriceRange] = useState([0, 10000]);
   const [selectedCategories, setSelectedCategories] = useState([]);
-  const [sortBy, setSortBy] = useState('featured');
+  const [sortBy, setSortBy] = useState('newest');
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [maxPrice, setMaxPrice] = useState(1000); // Default max price
-  const [searchQuery, setSearchQuery] = useState(''); // Add search query state
+  const [maxPrice, setMaxPrice] = useState(1000);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [visibleCategories, setVisibleCategories] = useState(PRODUCT_CATEGORIES);
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [showFiltersMobile, setShowFiltersMobile] = useState(false);
+  const [selectedCondition, setSelectedCondition] = useState('all');
+  const filterRef = useRef(null);
+  
+  // Handle closing the filters when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (filterRef.current && !filterRef.current.contains(event.target)) {
+        setShowFilters(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Handle body scroll lock when filter sidebar is open on mobile
+  useEffect(() => {
+    if (showFiltersMobile) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showFiltersMobile]);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -1032,8 +1077,9 @@ function MarketPage() {
 
         // Find the highest price among products
         const highestPrice = Math.max(...sortedProducts.map(p => p.price));
-        setMaxPrice(Math.ceil(highestPrice)); // Round up to nearest integer
-        setPriceRange([0, Math.ceil(highestPrice)]); // Update price range
+        const roundedHighestPrice = Math.ceil(highestPrice / 100) * 100; // Round to nearest hundred
+        setMaxPrice(roundedHighestPrice);
+        setPriceRange([0, roundedHighestPrice]);
       } catch (err) {
         console.error('Error fetching products:', err);
         setError('Failed to load products. Please try again later.');
@@ -1042,8 +1088,9 @@ function MarketPage() {
       }
     };
 
+    document.title = "Lion Bay | Columbia University Marketplace";
     fetchProducts();
-    const interval = setInterval(fetchProducts, 30000);
+    const interval = setInterval(fetchProducts, 60000); // Refresh every minute
     return () => clearInterval(interval);
   }, [authAxios]);
 
@@ -1056,39 +1103,184 @@ function MarketPage() {
     }
   };
 
-  const handlePriceChange = (event) => {
-    setPriceRange([Number(event.target.value), priceRange[1]]);
+  const handleConditionChange = (condition) => {
+    setSelectedCondition(condition);
   };
 
-  const handleMaxPriceChange = (event) => {
-    setPriceRange([priceRange[0], Number(event.target.value)]);
+  const handlePriceChange = (event, index) => {
+    const newPriceRange = [...priceRange];
+    newPriceRange[index] = Number(event.target.value);
+    setPriceRange(newPriceRange);
   };
 
   const handleSearchChange = (event) => {
     setSearchQuery(event.target.value);
+  };
+  
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    // Just prevent default form submission - search is already live
+  };
+
+  const clearFilters = () => {
+    setSelectedCategories([]);
+    setPriceRange([0, maxPrice]);
+    setSearchQuery('');
+    setSelectedCondition('all');
+    setSortBy('newest');
+  };
+
+  // Advanced semantic search function focusing on meaning and concepts rather than just keywords
+  const semanticSearchMatch = (product, query) => {
+    if (!query) return true;
+    
+    const normalizedQuery = query.toLowerCase().trim();
+    const queryTerms = normalizedQuery.split(/\s+/).filter(term => term.length > 1);
+    
+    // Bail early for empty queries after filtering
+    if (queryTerms.length === 0) return true;
+    
+    // Semantic knowledge base - concepts and their related terms
+    const semanticConcepts = {
+      // Product types and categories
+      'computer': ['laptop', 'desktop', 'pc', 'macbook', 'chromebook', 'notebook', 'computing', 'workstation'],
+      'phone': ['smartphone', 'mobile', 'iphone', 'android', 'cellular', 'calling', 'communication'],
+      'furniture': ['table', 'chair', 'desk', 'sofa', 'couch', 'shelving', 'bookcase', 'dresser', 'cabinet', 'seating'],
+      'book': ['textbook', 'novel', 'literature', 'reading', 'publication', 'study guide', 'manual', 'educational'],
+      'transportation': ['bicycle', 'bike', 'scooter', 'skateboard', 'commute', 'riding', 'cycling'],
+      'electronics': ['device', 'gadget', 'tech', 'technology', 'digital', 'electronic', 'appliance', 'charger'],
+      
+      // Conditions and states
+      'new': ['brand new', 'sealed', 'unopened', 'unused', 'mint', 'pristine', 'fresh'],
+      'used': ['pre-owned', 'second-hand', 'previously owned', 'gently used', 'worn'],
+      'good condition': ['well maintained', 'cared for', 'quality', 'working perfectly', 'functional'],
+      
+      // Price concepts
+      'cheap': ['affordable', 'inexpensive', 'budget', 'low price', 'economical', 'bargain', 'deal'],
+      'expensive': ['high-end', 'premium', 'luxury', 'costly', 'pricey', 'top-tier'],
+      
+      // Purposes and use cases
+      'studying': ['school', 'education', 'learning', 'academic', 'classroom', 'university', 'college', 'student'],
+      'entertainment': ['fun', 'leisure', 'recreation', 'hobby', 'enjoyment', 'gaming'],
+      'work': ['professional', 'office', 'business', 'productivity', 'working'],
+      
+      // Features
+      'portable': ['lightweight', 'compact', 'travel', 'carry', 'mobile', 'handheld'],
+      'large': ['big', 'spacious', 'roomy', 'sizeable', 'oversized', 'extensive'],
+      'small': ['compact', 'tiny', 'mini', 'little', 'portable', 'handheld'],
+    };
+    
+    // Category-specific semantic understanding
+    const categorySemantics = {
+      "Laptops & Accessories": ['computer', 'tech', 'device', 'work', 'studying', 'portable'],
+      "Textbooks & Study Guides": ['book', 'studying', 'education', 'academic', 'learning', 'school'],
+      "Dorm & Apartment Essentials": ['living', 'home', 'dorm', 'apartment', 'furnishing', 'decor'],
+      "Bicycles & Scooters": ['transportation', 'commute', 'travel', 'outdoor', 'ride'],
+      "Electronics & Gadgets": ['tech', 'device', 'digital', 'electronic', 'entertainment', 'work'],
+      "Furniture & Storage": ['furniture', 'living', 'home', 'organization', 'storage', 'seating'],
+      "Clothing & Fashion": ['wear', 'clothing', 'fashion', 'outfit', 'apparel', 'style'],
+      "School Supplies": ['studying', 'education', 'academic', 'writing', 'organization']
+    };
+    
+    // Price-based semantics (assume price ranges are meaningful)
+    const getPriceSemantics = (price) => {
+      if (price < 20) return ['cheap', 'budget', 'affordable', 'inexpensive'];
+      if (price < 50) return ['reasonable', 'affordable', 'mid-range'];
+      if (price < 100) return ['mid-range', 'moderate', 'reasonable'];
+      if (price < 200) return ['quality', 'mid-tier', 'investment'];
+      return ['premium', 'expensive', 'high-end', 'luxury'];
+    };
+    
+    // Condition semantics
+    const conditionSemantics = {
+      'New': ['new', 'brand new', 'unused', 'sealed', 'pristine'],
+      'Like New': ['barely used', 'almost new', 'excellent condition', 'mint'],
+      'Good': ['well maintained', 'good condition', 'gently used', 'working well'],
+      'Fair': ['used', 'functional', 'pre-owned', 'shows wear', 'acceptable']
+    };
+    
+    // Collect all relevant semantic concepts for this product
+    const productConcepts = new Set();
+    
+    // Add semantics based on product category
+    const categoryConcepts = categorySemantics[product.category] || [];
+    categoryConcepts.forEach(concept => productConcepts.add(concept));
+    
+    // Add semantics based on product price
+    const priceConcepts = getPriceSemantics(product.price);
+    priceConcepts.forEach(concept => productConcepts.add(concept));
+    
+    // Add semantics based on product condition
+    const conditionConcepts = conditionSemantics[product.condition] || [];
+    conditionConcepts.forEach(concept => productConcepts.add(concept));
+    
+    // Add basic product data for text matching
+    productConcepts.add(product.name.toLowerCase());
+    productConcepts.add(product.category.toLowerCase());
+    productConcepts.add(product.condition.toLowerCase());
+    
+    // Add details as individual words for better matching
+    if (product.details) {
+      const detailWords = product.details.toLowerCase().split(/\s+/);
+      detailWords.forEach(word => {
+        if (word.length > 3) productConcepts.add(word);
+      });
+    }
+    
+    // Calculate semantic match score
+    let matchScore = 0;
+    const totalQueryTerms = queryTerms.length;
+    
+    // Check each query term against semantic concepts
+    queryTerms.forEach(term => {
+      // Check if term directly matches a product concept
+      if (Array.from(productConcepts).some(concept => concept.includes(term))) {
+        matchScore += 1;
+        return;
+      }
+      
+      // Check if term is a semantic concept with related terms that match product concepts
+      for (const [concept, relatedTerms] of Object.entries(semanticConcepts)) {
+        if (term === concept || relatedTerms.includes(term)) {
+          // If query term is a concept, check if any related terms match product concepts
+          if (Array.from(productConcepts).some(productConcept => 
+              productConcept.includes(concept) || 
+              relatedTerms.some(relatedTerm => productConcept.includes(relatedTerm)))) {
+            matchScore += 1;
+            break;
+          }
+        }
+      }
+    });
+    
+    // Calculate match percentage (how many query terms matched semantically)
+    const matchPercentage = totalQueryTerms > 0 ? matchScore / totalQueryTerms : 0;
+    
+    // Product matches if at least 40% of query terms have semantic matches
+    // This threshold can be adjusted based on testing
+    return matchPercentage >= 0.4;
   };
 
   // Filter products based on selected filters and search
   const filteredProducts = products.filter(product => {
     const matchesCategory = selectedCategories.length === 0 || selectedCategories.includes(product.category);
     const matchesPrice = product.price >= priceRange[0] && product.price <= priceRange[1];
-    const matchesSearch = searchQuery === '' || 
-      product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      product.details.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      product.category.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesPrice && matchesSearch;
+    const matchesCondition = selectedCondition === 'all' || product.condition === selectedCondition;
+    const matchesSearch = !searchQuery || semanticSearchMatch(product, searchQuery);
+    
+    return matchesCategory && matchesPrice && matchesSearch && matchesCondition;
   });
 
   // Sort products
   const sortedProducts = [...filteredProducts].sort((a, b) => {
     if (sortBy === 'price-asc') return a.price - b.price;
     if (sortBy === 'price-desc') return b.price - a.price;
-    return 0; // Default: featured
+    if (sortBy === 'newest') return new Date(b.created_at) - new Date(a.created_at);
+    return 0;
   });
 
   if (loading) return (
-    <div className="market-page">
-      <div className="loading">Loading products...</div>
+    <div className="market-page"><div className="loading">Loading products...</div>
     </div>
   );
 
@@ -1102,137 +1294,202 @@ function MarketPage() {
   return (
     <div className="market-page">
       <div className="market-container">
-        <div className="market-header">
-          <div className="market-title">
-            <h1>Lion Bay</h1>
-            <p>The ultimate marketplace with the cheapest and best student utilities.</p>
-          </div>
-          
-          <div className="search-container">
-            <input
-              type="text"
-              placeholder="Search products..."
-              value={searchQuery}
-              onChange={handleSearchChange}
-              className="search-input"
-            />
+        {/* Hero section with search */}
+        <div className="market-hero">
+          <div className="hero-content">
+            <h1>Lion Bay Marketplace</h1>
+            <p>The ultimate marketplace for Columbia University students</p>
+            <form onSubmit={handleSearchSubmit} className="search-bar">
+              <input
+                type="text"
+                placeholder="What are you looking for today?"
+                value={searchQuery}
+                onChange={handleSearchChange}
+                className="search-input"
+              />
+              <button type="submit" className="search-button">
+                <i className="fas fa-search"></i>
+              </button>
+            </form>
           </div>
         </div>
 
+        {/* Categories section */}
+        <div className="categories-section">
+          <h2>Browse Categories</h2>
+          <div className="category-tiles">
+            {PRODUCT_CATEGORIES.map((category) => (
+              <div 
+                key={category} 
+                className={`category-tile ${selectedCategories.includes(category) ? 'active' : ''}`}
+                onClick={() => handleCategoryChange(category)}
+              >
+                <div className="category-icon">{getCategoryIcon(category)}</div>
+                <span>{category}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Filter and product section */}
         <div className="market-content">
-          <div className="filters-sidebar">
+          {/* Mobile filter toggle */}
+          <div className="mobile-filter-toggle">
+            <button onClick={() => setShowFiltersMobile(!showFiltersMobile)}>
+              <i className="fas fa-filter"></i> {showFiltersMobile ? 'Hide Filters' : 'Show Filters'}
+            </button>
             <div className="product-count">
               <span>{filteredProducts.length} products</span>
             </div>
+          </div>
+
+          {/* Filter overlay for mobile */}
+          {showFiltersMobile && (
+            <div className="filter-overlay" onClick={() => setShowFiltersMobile(false)}></div>
+          )}
+
+          {/* Filters sidebar */}
+          <div className={`filters-sidebar ${showFiltersMobile ? 'show' : ''}`} ref={filterRef}>
+            <div className="filter-header">
+              <h2>Filters</h2>
+              <div className="filter-header-actions">
+                {(selectedCategories.length > 0 || selectedCondition !== 'all' || 
+                  priceRange[0] > 0 || priceRange[1] < maxPrice || searchQuery) && (
+                  <button className="clear-filters-btn" onClick={clearFilters}>
+                    Clear All
+                  </button>
+                )}
+                <button 
+                  className="close-filters-btn" 
+                  onClick={() => setShowFiltersMobile(false)}
+                >
+                  <i className="fas fa-times"></i>
+                </button>
+              </div>
+            </div>
             
             <div className="filter-section">
-              <div className="filter-header">
-                <h3>Price</h3>
+              <div className="filter-title">
+                <h3>Price Range</h3>
               </div>
               <div className="price-range">
+                <div className="price-inputs">
+                  <div className="price-input">
+                    <label>Min:</label>
+                    <input 
+                      type="number" 
+                      value={priceRange[0]} 
+                      onChange={(e) => handlePriceChange(e, 0)}
+                      min="0"
+                      max={priceRange[1]}
+                    />
+                  </div>
+                  <div className="price-input">
+                    <label>Max:</label>
+                    <input 
+                      type="number" 
+                      value={priceRange[1]} 
+                      onChange={(e) => handlePriceChange(e, 1)}
+                      min={priceRange[0]}
+                      max={maxPrice}
+                    />
+                  </div>
+                </div>
                 <div className="range-slider">
                   <input
                     type="range"
                     min="0"
                     max={maxPrice}
                     value={priceRange[0]}
-                    onChange={handlePriceChange}
+                    onChange={(e) => handlePriceChange(e, 0)}
+                    className="slider"
+                  />
+                  <input
+                    type="range"
+                    min="0"
+                    max={maxPrice}
+                    value={priceRange[1]}
+                    onChange={(e) => handlePriceChange(e, 1)}
                     className="slider"
                   />
                 </div>
-                <div className="price-inputs">
-                  <div>From ${priceRange[0]}</div>
-                  <div>to ${priceRange[1]}</div>
+              </div>
+            </div>
+
+            <div className="filter-section condition-filter">
+              <div className="filter-title">
+                <h3>Condition</h3>
+              </div>
+              <div className="condition-options">
+                <div className="filter-option">
+                  <input
+                    type="radio"
+                    id="condition-all"
+                    name="condition"
+                    checked={selectedCondition === 'all'}
+                    onChange={() => handleConditionChange('all')}
+                  />
+                  <label htmlFor="condition-all">All Conditions</label>
+                </div>
+                <div className="filter-option">
+                  <input
+                    type="radio"
+                    id="condition-new"
+                    name="condition"
+                    checked={selectedCondition === 'New'}
+                    onChange={() => handleConditionChange('New')}
+                  />
+                  <label htmlFor="condition-new">New</label>
+                </div>
+                <div className="filter-option">
+                  <input
+                    type="radio"
+                    id="condition-like-new"
+                    name="condition"
+                    checked={selectedCondition === 'Like New'}
+                    onChange={() => handleConditionChange('Like New')}
+                  />
+                  <label htmlFor="condition-like-new">Like New</label>
+                </div>
+                <div className="filter-option">
+                  <input
+                    type="radio"
+                    id="condition-good"
+                    name="condition"
+                    checked={selectedCondition === 'Good'}
+                    onChange={() => handleConditionChange('Good')}
+                  />
+                  <label htmlFor="condition-good">Good</label>
+                </div>
+                <div className="filter-option">
+                  <input
+                    type="radio"
+                    id="condition-fair"
+                    name="condition"
+                    checked={selectedCondition === 'Fair'}
+                    onChange={() => handleConditionChange('Fair')}
+                  />
+                  <label htmlFor="condition-fair">Fair</label>
                 </div>
               </div>
             </div>
             
-            <div className="filter-section">
-              <div className="filter-header">
-                <h3>Categories</h3>
-              </div>
-              <div className="gender-options">
-                <div className="filter-option">
-                  <input
-                    type="checkbox"
-                    id="laptops"
-                    checked={selectedCategories.includes("Laptops & Accessories")}
-                    onChange={() => handleCategoryChange("Laptops & Accessories")}
-                  />
-                  <label htmlFor="laptops">Laptops & Accessories</label>
-                </div>
-                <div className="filter-option">
-                  <input
-                    type="checkbox"
-                    id="textbooks"
-                    checked={selectedCategories.includes("Textbooks & Study Guides")}
-                    onChange={() => handleCategoryChange("Textbooks & Study Guides")}
-                  />
-                  <label htmlFor="textbooks">Textbooks & Study Guides</label>
-                </div>
-                <div className="filter-option">
-                  <input
-                    type="checkbox"
-                    id="dorm"
-                    checked={selectedCategories.includes("Dorm & Apartment Essentials")}
-                    onChange={() => handleCategoryChange("Dorm & Apartment Essentials")}
-                  />
-                  <label htmlFor="dorm">Dorm & Apartment Essentials</label>
-                </div>
-                <div className="filter-option">
-                  <input
-                    type="checkbox"
-                    id="bicycles"
-                    checked={selectedCategories.includes("Bicycles & Scooters")}
-                    onChange={() => handleCategoryChange("Bicycles & Scooters")}
-                  />
-                  <label htmlFor="bicycles">Bicycles & Scooters</label>
-                </div>
-                <div className="filter-option">
-                  <input
-                    type="checkbox"
-                    id="electronics"
-                    checked={selectedCategories.includes("Electronics & Gadgets")}
-                    onChange={() => handleCategoryChange("Electronics & Gadgets")}
-                  />
-                  <label htmlFor="electronics">Electronics & Gadgets</label>
-                </div>
-                <div className="filter-option">
-                  <input
-                    type="checkbox"
-                    id="furniture"
-                    checked={selectedCategories.includes("Furniture & Storage")}
-                    onChange={() => handleCategoryChange("Furniture & Storage")}
-                  />
-                  <label htmlFor="furniture">Furniture & Storage</label>
-                </div>
-                <div className="filter-option">
-                  <input
-                    type="checkbox"
-                    id="clothing"
-                    checked={selectedCategories.includes("Clothing & Fashion")}
-                    onChange={() => handleCategoryChange("Clothing & Fashion")}
-                  />
-                  <label htmlFor="clothing">Clothing & Fashion</label>
-                </div>
-                <div className="filter-option">
-                  <input
-                    type="checkbox"
-                    id="supplies"
-                    checked={selectedCategories.includes("School Supplies")}
-                    onChange={() => handleCategoryChange("School Supplies")}
-                  />
-                  <label htmlFor="supplies">School Supplies</label>
-                </div>
-              </div>
+            <div className="filter-apply-button-container">
+              <button
+                className="filter-apply-button"
+                onClick={() => setShowFiltersMobile(false)}
+              >
+                Apply Filters
+              </button>
             </div>
           </div>
           
+          {/* Products grid */}
           <div className="products-grid">
             <div className="sort-options">
               <label>Sort by</label>
               <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-                <option value="featured">Featured</option>
+                <option value="newest">Newest First</option>
                 <option value="price-asc">Price: Low to High</option>
                 <option value="price-desc">Price: High to Low</option>
               </select>
@@ -1244,13 +1501,22 @@ function MarketPage() {
                   <Link key={product.id} to={`/market/${product.id}`} className="product-card-link">
                     <div className="product-card">
                       <div className="product-image">
-                        <img src={getFirstImage(product.image_path) || "/api/placeholder/300/300"} alt={product.name} />
+                        <img 
+                          src={getFirstImage(product.image_path) || "/api/placeholder/300/300"} 
+                          alt={product.name} 
+                          loading="lazy" 
+                          onLoad={(e) => e.target.classList.add('loaded')}
+                          className="product-img"
+                        />
+                        <div className="image-loading-placeholder">
+                          <div className="loading-spinner small"></div>
+                        </div>
+                        <div className="product-badge">{product.condition}</div>
                       </div>
                       <div className="product-details">
                         <div className="product-title">{product.name}</div>
-                        <div className="product-specs">
-                          <div>{product.category}</div>
-                          <div>{product.condition}</div>
+                        <div className="product-category">
+                          <span>{getCategoryIcon(product.category)}</span> {product.category}
                         </div>
                         <div className="product-price">${product.price.toLocaleString()}</div>
                       </div>
@@ -1259,7 +1525,9 @@ function MarketPage() {
                 ))
               ) : (
                 <div className="no-products">
+                  <i className="fas fa-search"></i>
                   <p>No products found matching your criteria.</p>
+                  <button onClick={clearFilters} className="clear-filters-btn">Clear All Filters</button>
                 </div>
               )}
             </div>
@@ -1535,7 +1803,7 @@ function ProductDetailPage() {
           </div>
           
           <div className="product-detail-info">
-            <p><strong>Category:</strong> {product.category}</p>
+            <p><strong>Category:</strong> {getCategoryIcon(product.category)} {product.category}</p>
             <p><strong>Condition:</strong> {product.condition}</p>
             {product.material && <p><strong>Material:</strong> {product.material}</p>}
           </div>
@@ -3117,7 +3385,7 @@ function ChatPage() {
   if (!isAuthenticated) {
     console.log("ChatPage: Not authenticated, redirecting.");
     // This should ideally be handled by a ProtectedRoute component wrapping this page
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" />;
   }
 
   // 2. Check if chat/message data is still loading
@@ -4455,7 +4723,7 @@ function ProductManagementPage() {
                   <div className="product-management-details">
                     <h3>{product.name}</h3>
                     <p className="product-management-price">${parseFloat(product.price).toFixed(2)}</p>
-                    <p className="product-management-category">{product.category}</p>
+                    <p className="product-management-category">{getCategoryIcon(product.category)} {product.category}</p>
                     <p className="product-management-condition">{product.condition}</p>
                     <p className="product-management-status">
                       <span className={`status-indicator ${product.is_sold ? 'sold' : 'available'}`}>

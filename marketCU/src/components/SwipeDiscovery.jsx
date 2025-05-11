@@ -5,6 +5,7 @@ import { useCart } from '../App';
 import ToastNotification from './ToastNotification';
 import { buildApiUrl, API_BASE_URL } from '../config';
 import '../styles/SwipeDiscovery.css';
+import { getCategoryIcon } from '../App';
 
 const SwipeDiscovery = () => {
   const { authAxios, isAuthenticated, currentUser } = useAuth();
@@ -803,7 +804,9 @@ const SwipeDiscovery = () => {
                 <h3 className="swipe-product-title">{products[currentIndex].name}</h3>
                 <p className="swipe-product-price">${parseFloat(products[currentIndex].price).toLocaleString()}</p>
                 <div className="swipe-product-meta">
-                  <span className="swipe-product-category">{products[currentIndex].category}</span>
+                  <span className="swipe-product-category">
+                    {getCategoryIcon(products[currentIndex].category)} {products[currentIndex].category}
+                  </span>
                   <span className="swipe-product-condition">{products[currentIndex].condition}</span>
                 </div>
               </div>
