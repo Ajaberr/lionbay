@@ -1,4 +1,4 @@
-import { useState, useContext, createContext, useEffect, useRef, Fragment as Fragment2 } from 'react';
+import { useState, useContext, createContext, useEffect, useRef, Fragment as Fragment2, useMemo } from 'react';
 import { BrowserRouter as Router, Route, Routes, Link, Navigate, useParams, useNavigate, useLocation } from 'react-router-dom';
 import './styles/App.css';
 import './App.css';
@@ -1046,42 +1046,77 @@ function MarketPage() {
 
   // Intersection Observer for infinite scroll
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
+    // We'll do all filtering client-side with the useMemo for filteredProducts
+    // This prevents the need for server requests when filters change
+    
+    // Only if we've navigated beyond page 1 and we filter, should we reset to page 1
+    if (page !== 1) {
+      setPage(1);
+    }
+    
+    // Always ensure we have enough products for infinite scroll when filters change
+    if (products.length < 24 && hasMore && !loading && !isLoadingMore) {
+      // This will trigger the intersection observer to load more if needed
+      const checkForMoreProducts = setTimeout(() => {
+        if (filteredProducts.length < 12 && hasMore) {
           loadMoreProducts();
         }
+      }, 500);
+      
+      return () => clearTimeout(checkForMoreProducts);
+    }
+  }, [selectedCategories, priceRange, sortBy, searchQuery, selectedConditions]);
+
+  // Make sure the Intersection Observer doesn't reload the page
+  useEffect(() => {
+    // Create a new intersection observer
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore && !loading) {
+          // Use setTimeout to debounce the load more call
+          const loadMoreTimeout = setTimeout(() => {
+            loadMoreProducts();
+          }, 300);
+          
+          return () => clearTimeout(loadMoreTimeout);
+        }
       },
-      { threshold: 0.1 }
+      { threshold: 0.1, rootMargin: '200px' } // Increased rootMargin to load earlier
     );
 
+    // Observe the last product element if it exists
     if (lastProductRef.current) {
       observer.observe(lastProductRef.current);
     }
 
+    // Store the observer reference
     observerRef.current = observer;
 
+    // Clean up observer when component unmounts
     return () => {
       if (observerRef.current) {
         observerRef.current.disconnect();
       }
     };
-  }, [hasMore, isLoadingMore]);
+  }, [hasMore, isLoadingMore, loading, lastProductRef.current]); // Added dependencies
 
+  // Update the loadMoreProducts function
   const loadMoreProducts = async () => {
-    if (isLoadingMore) return;
+    if (!hasMore || isLoadingMore) return;
     
-    setIsLoadingMore(true);
     try {
+      setIsLoadingMore(true);
+      console.log(`Loading more products, page ${page + 1}`);
       const response = await authAxios.get(`/products?page=${page + 1}&limit=12`);
       const newProducts = response.data;
       
-      if (newProducts.length === 0) {
-        setHasMore(false);
-      } else {
-        setProducts(prev => [...prev, ...newProducts]);
+      if (newProducts.length > 0) {
+        // Append new products rather than replacing the state
+        setProducts(prevProducts => [...prevProducts, ...newProducts]);
         setPage(prev => prev + 1);
       }
+      
+      setHasMore(newProducts.length === 12);
     } catch (err) {
       console.error('Error loading more products:', err);
     } finally {
@@ -1092,9 +1127,22 @@ function MarketPage() {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        setLoading(true);
+        // Only show loading indicator on first load, not on refreshes
+        if (products.length === 0) {
+          setLoading(true);
+        }
+        
+        // Load products initially (increased initial limit)
         const response = await authAxios.get('/products?page=1&limit=12');
-        setProducts(response.data);
+        
+        // Update state without causing reloads
+        setProducts(prevProducts => {
+          // If we already have products, preserve them until new ones are loaded
+          if (prevProducts.length > 0 && loading) {
+            return response.data;
+          }
+          return response.data;
+        });
         
         // Find the highest price among products
         const highestPrice = Math.max(...response.data.map(p => p.price));
@@ -1102,7 +1150,11 @@ function MarketPage() {
         setMaxPrice(roundedHighestPrice);
         setPriceRange([0, roundedHighestPrice]);
         
+        // Check if we should show "load more" button
         setHasMore(response.data.length === 12);
+        
+        // Reset page to 1 since we just loaded the first page
+        setPage(1);
       } catch (err) {
         console.error('Error fetching products:', err);
         setError('Failed to load products. Please try again later.');
@@ -1113,31 +1165,62 @@ function MarketPage() {
 
     document.title = "Lion Bay | Columbia University Marketplace";
     fetchProducts();
-  }, [authAxios]);
+  }, [authAxios]); // Only depend on authAxios, not other state variables
 
   // Optimize image loading
-  const handleImageLoad = (e) => {
-    e.target.classList.add('loaded');
+  const loadImage = (src) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(src);
+      img.onerror = () => reject(new Error(`Failed to load image: ${src}`));
+      img.src = src;
+    });
   };
 
   // Filter functions
-  const handleCategoryChange = (category) => {
-    if (selectedCategories.includes(category)) {
-      setSelectedCategories(selectedCategories.filter(c => c !== category));
-    } else {
-      setSelectedCategories([...selectedCategories, category]);
+  const handleCategoryChange = (category, event) => {
+    // Always prevent default and stop propagation
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation(); 
     }
+
+    // Update categories locally, don't trigger network requests
+    setSelectedCategories(prev => {
+      if (prev.includes(category)) {
+        return prev.filter(c => c !== category);
+      } else {
+        return [...prev, category];
+      }
+    });
+    
+    return false; // Prevent any form submissions
   };
 
-  const handleConditionChange = (condition) => {
-    setSelectedConditions((prev) =>
-      prev.includes(condition)
-        ? prev.filter((c) => c !== condition)
-        : [...prev, condition]
-    );
+  // Update the handleConditionChange function to handle events
+  const handleConditionChange = (condition, event) => {
+    // Prevent default browser behavior
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    
+    // Toggle the condition in our selected conditions state
+    setSelectedConditions(prev => {
+      const isSelected = prev.includes(condition);
+      return isSelected 
+        ? prev.filter(c => c !== condition) 
+        : [...prev, condition];
+    });
+    
+    // Return false to prevent any potential form submission
+    return false;
   };
 
   const handlePriceChange = (event, index) => {
+    // Prevent default to avoid any form submission
+    event.preventDefault();
+    
     const newPriceRange = [...priceRange];
     newPriceRange[index] = Number(event.target.value);
     setPriceRange(newPriceRange);
@@ -1152,6 +1235,7 @@ function MarketPage() {
     // Just prevent default form submission - search is already live
   };
 
+  // Update the clearFilters function to include clearing condition filters
   const clearFilters = () => {
     setSelectedCategories([]);
     setPriceRange([0, maxPrice]);
@@ -1291,23 +1375,50 @@ function MarketPage() {
     return matchPercentage >= 0.4;
   };
 
-  // Filter products based on selected filters and search
-  const filteredProducts = products.filter(product => {
-    const matchesCategory = selectedCategories.length === 0 || selectedCategories.includes(product.category);
-    const matchesPrice = product.price >= priceRange[0] && product.price <= priceRange[1];
-    const matchesCondition = selectedConditions.length === 0 || selectedConditions.includes(product.condition);
-    const matchesSearch = !searchQuery || semanticSearchMatch(product, searchQuery);
-    
-    return matchesCategory && matchesPrice && matchesSearch && matchesCondition;
-  });
+  // Use useMemo to ensure filtering happens efficiently without unnecessary recalculation
+  const filteredProducts = useMemo(() => {
+    return products.filter(product => {
+      const matchesCategory = selectedCategories.length === 0 || selectedCategories.includes(product.category);
+      const matchesPrice = product.price >= priceRange[0] && product.price <= priceRange[1];
+      const matchesCondition = selectedConditions.length === 0 || selectedConditions.includes(product.condition);
+      const matchesSearch = !searchQuery || semanticSearchMatch(product, searchQuery);
+      
+      return matchesCategory && matchesPrice && matchesSearch && matchesCondition;
+    });
+  }, [products, selectedCategories, priceRange, selectedConditions, searchQuery]);
 
-  // Sort products
-  const sortedProducts = [...filteredProducts].sort((a, b) => {
-    if (sortBy === 'price-asc') return a.price - b.price;
-    if (sortBy === 'price-desc') return b.price - a.price;
-    if (sortBy === 'newest') return new Date(b.created_at) - new Date(a.created_at);
-    return 0;
-  });
+  // Also use useMemo for sortedProducts to avoid unnecessary re-sorting
+  const sortedProducts = useMemo(() => {
+    return [...filteredProducts].sort((a, b) => {
+      if (sortBy === 'price-asc') return a.price - b.price;
+      if (sortBy === 'price-desc') return b.price - a.price;
+      if (sortBy === 'newest') return new Date(b.created_at) - new Date(a.created_at);
+      return 0;
+    });
+  }, [filteredProducts, sortBy]);
+
+  // Update the reference handling for the last product item
+  // Add this function inside MarketPage component
+  const setLastProductRef = (node) => {
+    lastProductRef.current = node;
+    // When the ref changes, we need to update the observer
+    if (observerRef.current && node) {
+      observerRef.current.disconnect();
+      observerRef.current.observe(node);
+    }
+  };
+
+  // Add the sort handler function
+  const handleSortChange = (e) => {
+    // Prevent any form submission
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Update sortBy state
+    setSortBy(e.target.value);
+    
+    return false;
+  };
 
   if (loading) return (
     <div className="market-page"><div className="loading">Loading products...</div>
@@ -1352,7 +1463,7 @@ function MarketPage() {
               <div 
                 key={category} 
                 className={`category-tile ${selectedCategories.includes(category) ? 'active' : ''}`}
-                onClick={() => handleCategoryChange(category)}
+                onClick={(e) => handleCategoryChange(category, e)}
               >
                 <div className="category-icon">{getCategoryIcon(category)}</div>
                 <span>{category}</span>
@@ -1400,6 +1511,7 @@ function MarketPage() {
                     type="number"
                     value={priceRange[0]}
                     onChange={(e) => handlePriceChange(e, 0)}
+                    onSubmit={(e) => e.preventDefault()}
                     placeholder="Min"
                   />
                 </div>
@@ -1409,6 +1521,7 @@ function MarketPage() {
                     type="number"
                     value={priceRange[1]}
                     onChange={(e) => handlePriceChange(e, 1)}
+                    onSubmit={(e) => e.preventDefault()}
                     placeholder="Max"
                   />
                 </div>
@@ -1420,6 +1533,7 @@ function MarketPage() {
                   max={maxPrice}
                   value={priceRange[0]}
                   onChange={(e) => handlePriceChange(e, 0)}
+                  onClick={(e) => e.preventDefault()}
                   className="slider"
                 />
                 <input
@@ -1428,27 +1542,9 @@ function MarketPage() {
                   max={maxPrice}
                   value={priceRange[1]}
                   onChange={(e) => handlePriceChange(e, 1)}
+                  onClick={(e) => e.preventDefault()}
                   className="slider"
                 />
-              </div>
-            </div>
-
-            <div className="filter-section">
-              <div className="filter-title">
-                <h3>Categories</h3>
-              </div>
-              <div className="category-options">
-                {PRODUCT_CATEGORIES.map((category) => (
-                  <div key={category} className="filter-option">
-                    <input
-                      type="checkbox"
-                      id={`category-${category}`}
-                      checked={selectedCategories.includes(category)}
-                      onChange={() => handleCategoryChange(category)}
-                    />
-                    <label htmlFor={`category-${category}`}>{category}</label>
-                  </div>
-                ))}
               </div>
             </div>
           </div>
@@ -1457,7 +1553,11 @@ function MarketPage() {
           <div className="products-grid">
             <div className="sort-options">
               <label>Sort by</label>
-              <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              <select 
+                value={sortBy} 
+                onChange={handleSortChange}
+                onClick={(e) => e.stopPropagation()}
+              >
                 <option value="newest">Newest First</option>
                 <option value="price-asc">Price: Low to High</option>
                 <option value="price-desc">Price: High to Low</option>
@@ -1465,41 +1565,77 @@ function MarketPage() {
             </div>
             
             <div className="products-list">
-              {sortedProducts.map((product, index) => (
-                <Link 
-                  key={product.id} 
-                  to={`/market/${product.id}`} 
-                  className="product-card-link"
-                  ref={index === sortedProducts.length - 1 ? lastProductRef : null}
-                >
-                  <div className="product-card">
-                    <div className="product-image">
-                      <img 
-                        src={getFirstImage(product.image_path) || "/api/placeholder/300/300"} 
-                        alt={product.name} 
-                        loading="lazy"
-                        onLoad={handleImageLoad}
-                        className="product-img"
-                      />
-                      <div className="image-loading-placeholder">
-                        <div className="loading-spinner small"></div>
-                      </div>
-                      <div className="product-badge">{product.condition}</div>
-                    </div>
-                    <div className="product-details">
-                      <div className="product-title">{product.name}</div>
-                      <div className="product-category">
-                        <span>{getCategoryIcon(product.category)}</span> {product.category}
-                      </div>
-                      <div className="product-price">${product.price.toLocaleString()}</div>
-                    </div>
-                  </div>
-                </Link>
-              ))}
-              {isLoadingMore && (
-                <div className="loading-more">
-                  <div className="loading-spinner small"></div>
+              {sortedProducts.length === 0 && !loading ? (
+                <div className="no-products-message">
+                  <i className="fas fa-search"></i>
+                  <p>No products match your search criteria</p>
+                  <button className="clear-filters-btn" onClick={clearFilters}>Clear Filters</button>
                 </div>
+              ) : (
+                <>
+                  {sortedProducts.map((product, index) => (
+                    <Link 
+                      key={product.id} 
+                      to={`/market/${product.id}`} 
+                      className="product-card-link"
+                      ref={index === sortedProducts.length - 1 ? setLastProductRef : null}
+                    >
+                      <div className="product-card">
+                        <div className="product-image">
+                          {/* Initially show placeholder while image loads */}
+                          <div className="image-loading-placeholder">
+                            <div className="loading-spinner small"></div>
+                          </div>
+                          <img 
+                            src={getFirstImage(product.image_path) || "/api/placeholder/300/300"} 
+                            alt={product.name} 
+                            loading="lazy"
+                            onLoad={(e) => {
+                              // When image loads, show it and hide placeholder
+                              e.target.classList.add('loaded');
+                              const placeholder = e.target.parentElement.querySelector('.image-loading-placeholder');
+                              if (placeholder) {
+                                placeholder.style.opacity = '0';
+                                setTimeout(() => {
+                                  placeholder.style.display = 'none';
+                                }, 300); // Match transition time
+                              }
+                            }}
+                            onError={(e) => {
+                              // If image fails to load, show a fallback image
+                              e.target.src = "/api/placeholder/300/300";
+                              e.target.classList.add('loaded');
+                              const placeholder = e.target.parentElement.querySelector('.image-loading-placeholder');
+                              if (placeholder) {
+                                placeholder.style.display = 'none';
+                              }
+                            }}
+                            className="product-img"
+                          />
+                          <div className="product-badge" data-condition={product.condition}>{product.condition}</div>
+                        </div>
+                        <div className="product-details">
+                          <div className="product-title">{product.name}</div>
+                          <div className="product-category">
+                            <span>{getCategoryIcon(product.category)}</span> {product.category}
+                          </div>
+                          <div className="product-price">${product.price.toLocaleString()}</div>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                  {isLoadingMore && (
+                    <div className="loading-more">
+                      <div className="loading-spinner medium"></div>
+                      <p>Loading more products...</p>
+                    </div>
+                  )}
+                  {!hasMore && products.length > 0 && (
+                    <div className="no-more-products">
+                      <p>You've reached the end of the list</p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

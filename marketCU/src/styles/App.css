@@ -538,11 +538,15 @@ body {
 }
 
 .product-card {
-  border: none;
-  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
   overflow: hidden;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
   transition: transform 0.3s ease, box-shadow 0.3s ease;
-  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.05);
+  background-color: #fff;
+  height: 100%;
+  min-height: 320px; /* Ensure consistent height */
 }
 
 .product-card:hover {
@@ -551,16 +555,40 @@ body {
 }
 
 .product-image {
+  position: relative;
   width: 100%;
-  height: 220px;
+  height: 200px;
   overflow: hidden;
+  border-radius: 8px 8px 0 0;
+  background-color: #f0f0f0;
 }
 
-.product-image img {
+.image-loading-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f0f0f0;
+  z-index: 1;
+  transition: opacity 0.3s ease;
+}
+
+.product-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.5s ease;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 2;
+  position: relative;
+}
+
+.product-img.loaded {
+  opacity: 1;
 }
 
 .product-card:hover .product-image img {
@@ -568,14 +596,23 @@ body {
 }
 
 .product-details {
-  padding: 1.5rem;
+  padding: 15px;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .product-title {
+  font-size: 16px;
   font-weight: 600;
-  font-size: 1.1rem;
-  margin-bottom: 0.8rem;
-  color: #333;
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2; /* Limit to 2 lines */
+  -webkit-box-orient: vertical;
+  line-height: 1.3;
+  min-height: 42px; /* Ensure consistent height for title area */
 }
 
 .product-specs {
@@ -1624,9 +1661,32 @@ img[src^="/api/placeholder"] {
 
 .featured-products-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 30px;
-  margin-bottom: 2rem;
+  margin-top: 40px;
+  margin-bottom: 30px;
+  width: 100%;
+}
+
+@media (max-width: 1160px) {
+  .featured-products-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .featured-products-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  .featured-products-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+  }
 }
 
 .view-all-link {
@@ -2521,14 +2581,41 @@ img[src^="/api/placeholder"] {
 
 .no-products-message {
   grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
   text-align: center;
-  padding: 3rem;
   color: #666;
+  width: 100%;
+}
+
+.no-products-message i {
+  font-size: 48px;
+  color: #ccc;
+  margin-bottom: 16px;
 }
 
 .no-products-message p {
-  margin-bottom: 1rem;
-  font-size: 1.1rem;
+  margin-bottom: 20px;
+  font-size: 18px;
+}
+
+.no-products-message .clear-filters-btn {
+  padding: 10px 20px;
+  background-color: #1c4587;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.3s;
+}
+
+.no-products-message .clear-filters-btn:hover {
+  background-color: #15366b;
 }
 
 /* Product Form Styles */
@@ -2839,4 +2926,146 @@ img[src^="/api/placeholder"] {
   justify-content: center;
   align-items: center;
   z-index: 1200; /* Higher than sidebar and header */
+}
+
+/* Loading spinner sizes */
+.loading-spinner.small {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+}
+
+.loading-spinner.medium {
+  width: 30px;
+  height: 30px;
+  border-width: 3px;
+}
+
+/* Infinite scroll loading indicator */
+.loading-more {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  grid-column: 1 / -1;
+  color: #666;
+}
+
+.no-more-products {
+  width: 100%;
+  text-align: center;
+  padding: 20px;
+  color: #666;
+  grid-column: 1 / -1;
+  font-style: italic;
+  margin-top: 10px;
+}
+
+/* Product condition tag styling */
+.product-condition-tag {
+  display: none; /* Hide instead of completely removing in case it's used elsewhere */
+}
+
+.product-condition-tag[data-condition="New"],
+.product-condition-tag[data-condition="Like new"],
+.product-condition-tag[data-condition="Good condition"],
+.product-condition-tag[data-condition="Fair condition"],
+.product-condition-tag[data-condition="Poor condition"] {
+  display: none;
+}
+
+/* Product badge styling with condition-based colors */
+.product-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  z-index: 3;
+  background-color: #1c4587; /* Default color */
+}
+
+/* Different colors for different conditions */
+.product-badge[data-condition="New"] {
+  background-color: #38a169; /* Green for new */
+}
+
+.product-badge[data-condition="Like new"] {
+  background-color: #4299e1; /* Blue for like new */
+}
+
+.product-badge[data-condition="Good condition"] {
+  background-color: #805ad5; /* Purple for good */
+}
+
+.product-badge[data-condition="Fair condition"] {
+  background-color: #ed8936; /* Orange for fair */
+}
+
+.product-badge[data-condition="Poor condition"] {
+  background-color: #e53e3e; /* Red for poor */
+}
+
+/* Condition filter styling */
+.condition-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-option input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.filter-option label {
+  font-size: 14px;
+  cursor: pointer;
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Add small color indicators for conditions */
+.filter-option label::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 8px;
+  border: 1px solid #ddd;
+}
+
+.filter-option:nth-child(1) label::before {
+  background-color: #38a169; /* Green for new */
+}
+
+.filter-option:nth-child(2) label::before {
+  background-color: #4299e1; /* Blue for like new */
+}
+
+.filter-option:nth-child(3) label::before {
+  background-color: #805ad5; /* Purple for good */
+}
+
+.filter-option:nth-child(4) label::before {
+  background-color: #ed8936; /* Orange for fair */
+}
+
+.filter-option:nth-child(5) label::before {
+  background-color: #e53e3e; /* Red for poor */
 }

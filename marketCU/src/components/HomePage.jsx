@@ -78,23 +78,22 @@ function HomePage() {
         
         if (adminEmails.length > 0) {
           // Get all products
-          const productsResponse = await axios.get(`${API_BASE_URL}/products`);
-          // Filter for products from admin users and limit to 3
+          const productsResponse = await axios.get(`${API_BASE_URL}/products?limit=50`);
+          // Filter for products from admin users without limiting the number
           const adminProducts = productsResponse.data
-            .filter(product => adminEmails.includes(product.seller_email))
-            .slice(0, 3);
+            .filter(product => adminEmails.includes(product.seller_email));
           
           setFeaturedProducts(adminProducts);
         } else {
           // Fallback to regular products if no admin emails found
-          const response = await axios.get(`${API_BASE_URL}/products?limit=3`);
+          const response = await axios.get(`${API_BASE_URL}/products?limit=12`);
           setFeaturedProducts(response.data);
         }
       } catch (error) {
         console.error('Error fetching featured products:', error);
         // Fallback to regular products if there's an error
         try {
-          const response = await axios.get(`${API_BASE_URL}/products?limit=3`);
+          const response = await axios.get(`${API_BASE_URL}/products?limit=12`);
           setFeaturedProducts(response.data);
         } catch (fallbackError) {
           console.error('Error fetching fallback products:', fallbackError);
@@ -179,8 +178,14 @@ function HomePage() {
                           <img 
                             src={getFirstImage(product.image_path)} 
                             alt={product.name} 
-                            loading="lazy" 
-                            onLoad={(e) => e.target.classList.add('loaded')}
+                            loading="eager" 
+                            onLoad={(e) => {
+                              e.target.classList.add('loaded');
+                              const placeholder = e.target.nextElementSibling;
+                              if (placeholder) {
+                                placeholder.style.display = 'none';
+                              }
+                            }}
                             className="product-img"
                           />
                           <div className="image-loading-placeholder">
@@ -190,12 +195,14 @@ function HomePage() {
                       ) : (
                         <div className="placeholder-image">No Image</div>
                       )}
+                      {product.condition && (
+                        <div className="product-badge" data-condition={product.condition}>{product.condition}</div>
+                      )}
                     </div>
                     <div className="product-details">
                       <h3 className="product-title">{product.name}</h3>
-                      <div className="product-specs">
-                        <p>Condition: {product.condition}</p>
-                        <p>Category: {getCategoryIcon(product.category)} {product.category}</p>
+                      <div className="product-category">
+                        <span>{getCategoryIcon(product.category)}</span> {product.category}
                       </div>
                       <div className="product-price">${parseFloat(product.price).toFixed(2)}</div>
                     </div>
