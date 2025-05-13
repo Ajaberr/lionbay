@@ -1389,7 +1389,13 @@ function MarketPage() {
 
   // Also use useMemo for sortedProducts to avoid unnecessary re-sorting
   const sortedProducts = useMemo(() => {
-    return [...filteredProducts].sort((a, b) => {
+    // First deduplicate by product id (in case of multiple categories causing duplicates)
+    const uniqueProducts = Array.from(
+      new Map(filteredProducts.map(product => [product.id, product])).values()
+    );
+    
+    // Then sort the unique products
+    return uniqueProducts.sort((a, b) => {
       if (sortBy === 'price-asc') return a.price - b.price;
       if (sortBy === 'price-desc') return b.price - a.price;
       if (sortBy === 'newest') return new Date(b.created_at) - new Date(a.created_at);
@@ -1602,8 +1608,8 @@ function MarketPage() {
                               }
                             }}
                             onError={(e) => {
-                              // If image fails to load, show a fallback image
-                              e.target.src = "/api/placeholder/300/300";
+                              // If image fails to load, use the default background color of product card
+                              e.target.style.display = 'none'; // Hide the broken image
                               e.target.classList.add('loaded');
                               const placeholder = e.target.parentElement.querySelector('.image-loading-placeholder');
                               if (placeholder) {
@@ -2000,7 +2006,7 @@ function CreateProductPage() {
   const validateImageUrl = async (url) => {
     try {
       // Check if URL is valid
-      if (!url.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i) && 
+      if (!url.match(/^https?:\/\/.+\.(jpg|jpeg|png|gif|webp|heic)(\?.*)?$/i) && 
           !url.startsWith('data:image/')) {
         return { valid: false, error: 'Invalid image format. Please provide a valid image URL or upload an image.' };
       }
@@ -2116,9 +2122,12 @@ function CreateProductPage() {
     limitedFiles.forEach((file, index) => {
       console.log(`Processing file ${index + 1}/${limitedFiles.length}:`, file.name);
       
-      // Check file type
-      if (!file.type.startsWith('image/')) {
-        setImageError('Please upload valid image files (JPEG, PNG, or GIF)');
+      // Check file type - support HEIC by checking both MIME type and file extension
+      const isValidType = file.type.startsWith('image/') || 
+                         /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(file.name);
+                         
+      if (!isValidType) {
+        setImageError('Please upload valid image files (JPEG, PNG, GIF, WEBP, or HEIC)');
         return;
       }
 
@@ -2384,7 +2393,7 @@ function CreateProductPage() {
           <div className="lionbay-logo">
             <img src={logo} alt="Lion Bay" />
           </div>
-          <h1>Lion Bay Marketplace</h1>
+          <h1>LionBay Marketplace</h1>
         </div>
         
         <form onSubmit={handleSubmit} className="create-product-form">
@@ -4378,10 +4387,13 @@ function ProductManagementPage() {
     
     limitedFiles.forEach(file => {
       // Check file type
-      if (!file.type.startsWith('image/')) {
+      const isValidType = file.type.startsWith('image/') || 
+                         /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(file.name);
+                         
+      if (!isValidType) {
         setFormErrors({
           ...formErrors,
-          images: 'Please upload valid image files (JPEG, PNG, or GIF)'
+          images: 'Please upload valid image files (JPEG, PNG, GIF, WEBP, or HEIC)'
         });
         return;
       }
@@ -5185,10 +5197,14 @@ function ProfilePage() {
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
-      if (!file.type.startsWith('image/')) {
+      // Check file type - support HEIC by checking both MIME type and file extension
+      const isValidType = file.type.startsWith('image/') || 
+                          /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(file.name);
+      
+      if (!isValidType) {
         setFormErrors({
           ...formErrors,
-          profileImage: 'Please upload a valid image file'
+          profileImage: 'Please upload a valid image file (JPEG, PNG, GIF, WEBP, or HEIC)'
         });
         return;
       }
